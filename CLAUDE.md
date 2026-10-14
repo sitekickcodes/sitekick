@@ -24,4 +24,4 @@ Sitekick's own desktop app (not client work): an agentic workspace for editing c
 ## Git
 
 - Commit as you go, in small logical commits.
-- Once a remote exists, push every commit. There is no remote yet; ask before creating one.
+- Push every commit to `origin` (github.com/sitekickcodes/sitekick, public). Never commit secrets.
