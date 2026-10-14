@@ -1,0 +1,57 @@
+:root {
+  color-scheme: light dark;
+  --bg: #ffffff;
+  --fg: #111111;
+  --muted: #6b6b6b;
+  font-family: -apple-system, BlinkMacSystemFont, 'Inter', system-ui, sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #121212;
+    --fg: #f2f2f2;
+    --muted: #9a9a9a;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+.app {
+  min-height: 100vh;
+  display: grid;
+  place-content: center;
+  text-align: center;
+  padding: 16px;
+}
+
+/* Lets the hidden-inset title bar area drag the window. */
+.titlebar {
+  position: fixed;
+  inset: 0 0 auto 0;
+  height: 40px;
+  -webkit-app-region: drag;
+}
+
+h1 {
+  margin: 0 0 8px;
+  font-size: 2.5rem;
+}
+
+.muted,
+.versions {
+  color: var(--muted);
+  margin: 4px 0;
+}
+
+.versions {
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
