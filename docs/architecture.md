@@ -103,9 +103,10 @@ Clients are thin. Everything stateful lives on the platform or in the sandbox, w
 | `sessions` | site, user, sandboxId, branch, status, previewUrl, startedAt, lastActiveAt, endedAt | One editing session = one sandbox |
 | `messages` | session, role (user / agent / tool), content, createdAt | The agent conversation transcript |
 | `changes` | site, session, branch, prUrl, status (`draft` / `in-review` / `published` / `discarded`), previewDeploymentUrl | What gets published |
+| `auth-sessions` | user, deviceName, tokenHash, previousTokenHash, expiresAt, lastUsedAt, revokedAt | One signed-in device. Holds the rotating refresh token (hashed). Staff revoke a device by setting `revokedAt`. |
 | `audit-log` | actor, action, target, metadata | Written by hooks |
 
-**Access rule:** a user can read a site when they are staff or hold a membership in the site's organization. Publishing needs the `editor` role or higher, plus staff approval when the site's `publishPolicy` says so.
+**Access rule:** a user can read a site when they are staff or hold a membership in the site's organization. This is implemented directly from `memberships` (`apps/platform/src/access`), not with `plugin-multi-tenant`. The plugin keeps a tenants array on each user, which would duplicate `memberships`, and the desktop app doesn't need its admin tenant switcher. Publishing needs the `editor` role or higher, plus staff approval when the site's `publishPolicy` says so.
 
 ## Sign-in and site selection
 
@@ -165,7 +166,7 @@ The Native SDK core can't import npm packages. Shared API types are generated fr
 
 | # | Milestone | Done when |
 | --- | --- | --- |
-| M0 | Platform skeleton | Payload app deployed on Vercel with Postgres. Users, organizations, memberships, invites and sites exist. Staff can sign in to the admin. |
+| M0 | Platform skeleton | Payload app deployed on Vercel with Postgres. Users, organizations, memberships, invites and sites exist. Staff can sign in to the admin. **Status:** built and tested locally, including `/api/v1` auth, me, sites and invites. Remaining: the Vercel project, Neon, migrations on deploy, an email adapter, and login rate limiting. |
 | M1 | Desktop sign-in + site picker | Sign in through `/api/v1/auth/*`, keychain session, `/api/v1/me/sites`, auto-open for one site, picker for several, switch site, sign out. |
 | M2 | Site connection | GitHub App installed and Vercel project linked. Staff register a site in the admin and the platform verifies access. |
 | M3 | Editing session + preview | Opening a site boots a sandbox from a snapshot and shows the live preview in the WebView. Idle shutdown and resume work. |

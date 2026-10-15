@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "platform-dev",
+      "runtimeExecutable": "bun",
+      "runtimeArgs": ["run", "--cwd", "apps/platform", "dev"],
+      "port": 3100
+    }
+  ]
+}

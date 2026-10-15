@@ -1,6 +1,6 @@
-# Sitekick
+# Sitekick desktop
 
-Sitekick's own desktop app: an agentic workspace where people and AI agents work directly on a client site's code, in the spirit of [Source by Webflow](https://webflow.com/updates/introducing-source-by-webflow). It is separate from any client project.
+The Sitekick desktop client, built on Native SDK. It talks to the platform (`apps/platform`) only through `/api/v1`. See the [repo README](../../README.md) and [docs/architecture.md](../../docs/architecture.md).
 
 ## Stack
 
@@ -14,6 +14,7 @@ Sitekick's own desktop app: an agentic workspace where people and AI agents work
 ```bash
 bun add -g @native-sdk/cli
 bun pm -g trust @native-sdk/cli
+cd apps/desktop
 native dev
 ```
 
