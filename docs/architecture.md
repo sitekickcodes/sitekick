@@ -1,6 +1,6 @@
 # Sitekick: architecture and initial plan
 
-Status: draft, 2026-10-15. The decisions marked **Decided** came from John. **Proposed** items still need sign-off.
+Status: draft, 2026-10-15. The decisions marked **Decided** came from John.
 
 ## What Sitekick is
 
@@ -14,7 +14,7 @@ A platform where Sitekick staff and our clients' marketing teams edit client web
 | Where editing runs | Cloud sandboxes: one Vercel Sandbox per editing session, holding the checked-out repo, a dev server and the agent. Clients install nothing. | Decided |
 | What a site is (v1) | A GitHub repo plus a Vercel project, built on our Next.js + Payload stack. Changes ship as branches and PRs. | Decided |
 | Desktop client | Native SDK (this repo) | Decided |
-| Platform backend | Next.js 16 + Payload 3 on Vercel, with Payload's own auth | Proposed (see below) |
+| Platform backend | Next.js 16 + Payload 3 on Vercel, with Payload's own auth for now. We may move to Better Auth or Clerk later if clients need SSO, social login or MFA. | Decided |
 
 ## Platform backend: Payload or Clerk?
 
@@ -40,9 +40,18 @@ We already run our site stack on Payload 3 (yimby-website uses 3.90 with `plugin
 - **Admin integration.** Payload admin would need a custom auth strategy to accept Clerk sessions.
 - **Ongoing expense and lock-in.** Pricing is per active user, and client identities live with a vendor.
 
-**Recommendation: Payload, using its built-in auth for v1, with the auth boundary kept swappable.**
+**Decision (2026-10-15): Payload, using its built-in auth for v1, with the auth boundary kept swappable.** Move to Better Auth or Clerk if clients need SSO, social login or MFA, or if Sitekick becomes self-serve for other agencies.
 
-- **v1 login:** email and password through a native form in the desktop app. It calls `POST /api/users/login`, stores the refresh token in the OS keychain (`Cmd.credentials`), and calls `/api/users/refresh-token` on launch. This is fine for a first-party app.
+### Auth guardrails (these keep a later swap cheap)
+
+1. **Clients never call Payload auth routes directly.** They use our own `/api/v1/auth/login`, `/api/v1/auth/refresh`, `/api/v1/auth/logout` and `/api/v1/me`, which wrap Payload. Swapping the identity provider only changes these handlers.
+2. **Our `users` collection is the canonical identity.** Every relation references our user ID. An external provider is mapped through an `authProviderId` field, never used as a foreign key.
+3. **Tokens are generic to the client:** a short-lived access token plus a refresh token in the OS keychain. The client makes no Payload-specific assumptions.
+4. **Revocation and abuse limits from day one:** Payload server-side sessions (logout and device revocation work), `maxLoginAttempts` and `lockTime`, and rate limiting on the login route.
+5. **Don't customize password hashing.** Moving hashes into Better Auth or Clerk without forcing resets is probably possible, but verify it at migration time.
+
+
+- **v1 login:** email and password through a native form in the desktop app. It calls our `POST /api/v1/auth/login` (which wraps Payload's login), stores the refresh token in the OS keychain (`Cmd.credentials`), and calls `/api/v1/auth/refresh` on launch. This is fine for a first-party app.
 - **Later SSO:** when clients ask for SSO (for example Google Workspace), add a browser-based login. The desktop opens the system browser to the platform's `/desktop/login` page with a PKCE challenge, the user signs in there (password, Google, or anything else Payload supports), and the platform redirects to `sitekick://auth/callback` with a one-time code that the app exchanges for a token. The data model and API don't change, only how the token is issued.
 - **If we outgrow Payload auth:** plug an IdP (Clerk, Auth0, or WorkOS) into Payload as a custom auth strategy. Payload stays the system of record.
 
@@ -106,7 +115,7 @@ This is the flow you asked for: after login, either ask which site or go straigh
 flowchart TD
   A[App launch] --> B{Refresh token<br/>in keychain?}
   B -- no --> L[Sign-in screen]
-  B -- yes --> R[Refresh token, GET /api/me/sites]
+  B -- yes --> R[POST /api/v1/auth/refresh<br/>GET /api/v1/me/sites]
   R -- 401 --> L
   L -- email + password --> R
   R --> C{How many sites?}
@@ -118,7 +127,7 @@ flowchart TD
   W -- Sign out --> X[Delete keychain entry<br/>end sessions] --> L
 ```
 
-- `GET /api/me/sites` returns accessible sites with their organization and the user's role. Staff see every site, so the picker needs search and grouping from day one.
+- `GET /api/v1/me/sites` returns accessible sites with their organization and the user's role. Staff see every site, so the picker needs search and grouping from day one.
 - The last-used site is stored locally (Native SDK persistence) so the picker can preselect it. It never auto-opens a site unless the user has exactly one.
 - Tokens are kept only in the OS keychain, never in model persistence.
 
@@ -157,7 +166,7 @@ The Native SDK core can't import npm packages. Shared API types are generated fr
 | # | Milestone | Done when |
 | --- | --- | --- |
 | M0 | Platform skeleton | Payload app deployed on Vercel with Postgres. Users, organizations, memberships, invites and sites exist. Staff can sign in to the admin. |
-| M1 | Desktop sign-in + site picker | Sign in, keychain session, `/api/me/sites`, auto-open for one site, picker for several, switch site, sign out. |
+| M1 | Desktop sign-in + site picker | Sign in through `/api/v1/auth/*`, keychain session, `/api/v1/me/sites`, auto-open for one site, picker for several, switch site, sign out. |
 | M2 | Site connection | GitHub App installed and Vercel project linked. Staff register a site in the admin and the platform verifies access. |
 | M3 | Editing session + preview | Opening a site boots a sandbox from a snapshot and shows the live preview in the WebView. Idle shutdown and resume work. |
 | M4 | Agent chat | Chat in the right panel drives an agent in the sandbox. Events stream, edits show in the preview, and changes can be undone. |
