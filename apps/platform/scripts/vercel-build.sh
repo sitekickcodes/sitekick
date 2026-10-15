@@ -6,7 +6,9 @@ set -euo pipefail
 
 if [ "${VERCEL_ENV:-}" = "production" ]; then
   echo "Production build: running migrations"
-  bun run migrate
+  # Migrations use Neon's direct connection: the pooled one (pgBouncer,
+  # transaction mode) can break session-level DDL in odd ways.
+  DATABASE_URL="${DATABASE_URL_UNPOOLED:-$DATABASE_URL}" bun run migrate
 else
   echo "Skipping migrations (VERCEL_ENV=${VERCEL_ENV:-unset})"
 fi

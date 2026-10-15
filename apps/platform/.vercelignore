@@ -1,0 +1,8 @@
+# Never upload local secrets or local-only state with `vercel deploy`.
+.env
+.env.*
+!.env.example
+.neon
+.local-db
+node_modules
+.next
