@@ -4,36 +4,51 @@ Sitekick's own desktop app: an agentic workspace where people and AI agents work
 
 ## Stack
 
-- **Electron** (main + preload) built with **electron-vite**
-- **React 19** renderer in TypeScript (strict)
-- **Bun** as the package manager, **Node 24** (`.nvmrc`)
+- **[Native SDK](https://native-sdk.dev)** (Vercel Labs, v0.11). App logic is TypeScript compiled to a native binary, and the UI is Native markup rendered in OS windows. No browser or JS engine ships in the app.
+- **Node 24** (`.nvmrc`) runs the TypeScript checker and compiler at build time.
+- **Bun** installs the global CLI. The project itself has no npm dependencies to install (see below).
+- **Zig 0.16** is the SDK's toolchain. The CLI downloads it into `~/.native/toolchains/` on first build.
 
 ## Getting started
 
 ```bash
-bun install
-bun run dev
+bun add -g @native-sdk/cli
+bun pm -g trust @native-sdk/cli
+native dev
 ```
 
-`bun run dev` builds the main and preload scripts, serves the renderer on <http://localhost:5173> with HMR, and opens the Electron window.
+`bun pm -g trust` runs the CLI's postinstall, which installs its pinned TypeScript compiler. Bun blocks it by default. The first `native dev` or `native build` asks to download Zig. Pass `--yes` to skip the prompt.
 
-| Script | What it does |
+### Workaround: SDK 0.11.0 npm package can't build
+
+The published `@native-sdk/cli@0.11.0` is missing a file its `build.zig` embeds, so every build fails with `unable to open 'tests/ts-core/gpu-dashboard-reference/main.zig'` ([vercel-labs/native#713](https://github.com/vercel-labs/native/issues/713)). Until a fixed release ships, build against a source checkout of the same tag:
+
+```bash
+git clone --depth 1 --branch v0.11.0 https://github.com/vercel-labs/native.git ~/.native/sdk/native-v0.11.0
+(cd ~/.native/sdk/native-v0.11.0/packages/core && npm ci --include=dev)
+export NATIVE_SDK_PATH=~/.native/sdk/native-v0.11.0
+```
+
+Put the `export` in your shell profile. Once a fixed CLI is released, upgrade it, drop the variable, and delete this section.
+
+| Command | What it does |
 | --- | --- |
-| `bun run dev` | Run the app in development with HMR |
-| `bun run build` | Production build into `out/` |
-| `bun run start` | Run the production build |
-| `bun run typecheck` | Type-check main/preload and renderer |
-
-If the Electron window fails with a missing binary, run `node node_modules/electron/install.js`. The `postinstall` script normally does this.
+| `native dev` | Build and run the app, with markup hot reload |
+| `native dev --core` | Run `src/core.ts` under Node without a window and feed it JSON messages |
+| `native check` | Check the core (TS subset), markup and `app.json` |
+| `native test` | Run the app's tests |
+| `native build` | ReleaseFast binary in `zig-out/bin/` |
+| `native package` | Distributable `.app` / `.dmg` |
+| `native doctor` | Check the toolchain |
 
 ## Layout
 
 ```
-src/
-  main/       Electron main process (windows, filesystem, child processes)
-  preload/    Context-isolated bridge, exposes window.sitekick
-  shared/     Types shared by main, preload and renderer
-  renderer/   React UI (index.html + src/)
+app.json          Manifest: identity, windows, views, permissions, security policy
+src/core.ts       Model, Msg, update: deterministic app logic (checked TS subset)
+src/app.native    The UI: Native markup bound to the model
+src/services/     Imperative work (fs, git, child processes, fetch), called from update via commands
+assets/icon.png   Icon source for every platform
 ```
 
-The renderer also loads in a plain browser at <http://localhost:5173>. There `window.sitekick` is undefined, so UI code must handle that.
+`package.json` and `tsconfig.json` exist only for editor IntelliSense. The CLI writes `node_modules/@native-sdk/core` itself, so don't run an install.

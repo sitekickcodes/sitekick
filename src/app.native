@@ -1,0 +1,25 @@
+<!-- The whole view: markup over the core's model. Embedded at build
+     time and hot-reloaded while `native dev` runs. Validate with:
+     native check -->
+<row grow="1">
+  <if test="{sidebarOpen}">
+    <column gap="8" padding="16" width="220">
+      <row gap="8" cross="center">
+        <text size="sm" foreground="text_muted" grow="1">Sites</text>
+        <button size="sm" variant="ghost" on-press="hide_sidebar">Hide</button>
+      </row>
+      <text foreground="text_muted">No sites yet</text>
+    </column>
+    <separator />
+  </if>
+  <column gap="8" padding="16" grow="1" main="center" cross="center">
+    <text size="heading">Sitekick</text>
+    <text foreground="text_muted">An agentic workspace for client sites.</text>
+    <if test="{sidebarOpen}">
+      <text size="sm" foreground="text_muted">Pick a site to start</text>
+    </if>
+    <else>
+      <button size="sm" variant="ghost" on-press="show_sidebar">Show sites</button>
+    </else>
+  </column>
+</row>
