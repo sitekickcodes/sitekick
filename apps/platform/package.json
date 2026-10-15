@@ -19,7 +19,8 @@
     "migrate:status": "bun --bun ./node_modules/.bin/payload migrate:status --disable-transpile",
     "seed": "bun --bun scripts/seed.ts",
     "test": "bun test",
-    "db:local": "bun scripts/local-db.ts"
+    "db:local": "bun scripts/local-db.ts",
+    "vercel-build": "bash scripts/vercel-build.sh"
   },
   "trustedDependencies": [
     "@embedded-postgres/darwin-arm64",
