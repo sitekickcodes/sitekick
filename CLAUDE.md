@@ -1,6 +1,6 @@
 # Sitekick: project rules
 
-Sitekick's own desktop app (not client work): an agentic workspace for editing client sites' code alongside AI agents, modelled on Source by Webflow. Built on [Native SDK](https://native-sdk.dev) (Vercel Labs, pre-1.0). See README.md for setup.
+Sitekick's own desktop app (not client work): an agentic workspace for editing client sites' code alongside AI agents, modelled on Source by Webflow. Built on [Native SDK](https://native-sdk.dev) (Vercel Labs, pre-1.0). See README.md for setup and docs/architecture.md for the platform architecture, domain model and milestones.
 
 ## Tooling
 
