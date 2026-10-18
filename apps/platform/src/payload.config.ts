@@ -6,12 +6,14 @@ import { attachDatabasePool } from '@vercel/functions'
 import { buildConfig } from 'payload'
 
 import { AuthSessions } from './collections/AuthSessions'
+import { DeviceAuthorizations } from './collections/DeviceAuthorizations'
 import { Invites } from './collections/Invites'
 import { Memberships } from './collections/Memberships'
 import { Organizations } from './collections/Organizations'
 import { Sites } from './collections/Sites'
 import { Users } from './collections/Users'
 import { authEndpoints } from './endpoints/v1/auth'
+import { deviceEndpoints } from './endpoints/v1/device'
 import { inviteEndpoints } from './endpoints/v1/invites'
 import { meEndpoints } from './endpoints/v1/me'
 
@@ -33,8 +35,8 @@ export default buildConfig({
     importMap: { baseDir: path.resolve(dirname) },
     meta: { titleSuffix: ' · Sitekick' },
   },
-  collections: [Users, Organizations, Memberships, Invites, Sites, AuthSessions],
-  endpoints: [...authEndpoints, ...meEndpoints, ...inviteEndpoints],
+  collections: [Users, Organizations, Memberships, Invites, Sites, AuthSessions, DeviceAuthorizations],
+  endpoints: [...authEndpoints, ...deviceEndpoints, ...meEndpoints, ...inviteEndpoints],
   // Clients use REST; no GraphQL surface to secure.
   graphQL: { disable: true },
   secret: process.env.PAYLOAD_SECRET || '',

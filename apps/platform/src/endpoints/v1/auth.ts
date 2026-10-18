@@ -20,6 +20,23 @@ async function issueTokens(payload: Payload, userId: number, sessionId: number, 
   }
 }
 
+/** Creates a device session for `user` and returns the token response body. */
+export async function startSession(payload: Payload, user: User, deviceName: string | undefined) {
+  const refreshToken = newOpaqueToken('skr')
+  const session = await payload.create({
+    collection: 'auth-sessions',
+    data: {
+      user: user.id,
+      deviceName: deviceName?.slice(0, 120) || 'Unknown device',
+      tokenHash: hashToken(refreshToken),
+      expiresAt: new Date(Date.now() + REFRESH_TOKEN_TTL_MS).toISOString(),
+      lastUsedAt: new Date().toISOString(),
+    },
+    overrideAccess: true,
+  })
+  return { ...(await issueTokens(payload, user.id, session.id, refreshToken)), user: publicUser(user) }
+}
+
 /** POST /api/v1/auth/login { email, password, deviceName? } */
 const login: Endpoint = {
   path: '/v1/auth/login',
@@ -42,20 +59,7 @@ const login: Endpoint = {
       throw err
     }
 
-    const refreshToken = newOpaqueToken('skr')
-    const session = await req.payload.create({
-      collection: 'auth-sessions',
-      data: {
-        user: user.id,
-        deviceName: str(body['deviceName'])?.slice(0, 120) ?? 'Unknown device',
-        tokenHash: hashToken(refreshToken),
-        expiresAt: new Date(Date.now() + REFRESH_TOKEN_TTL_MS).toISOString(),
-        lastUsedAt: new Date().toISOString(),
-      },
-      overrideAccess: true,
-    })
-
-    return json({ ...(await issueTokens(req.payload, user.id, session.id, refreshToken)), user: publicUser(user) })
+    return json(await startSession(req.payload, user, str(body['deviceName'])))
   },
 }
 

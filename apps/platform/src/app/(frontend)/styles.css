@@ -97,3 +97,40 @@ button {
   color: var(--accent-fg);
   cursor: pointer;
 }
+
+.code {
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+}
+
+.code.big {
+  font-size: 1.75rem;
+  text-align: center;
+  margin: 16px 0;
+}
+
+.actions {
+  grid-template-columns: 1fr 1fr;
+}
+
+button.secondary {
+  background: transparent;
+  color: var(--fg);
+  border: 1px solid var(--border);
+}
+
+.signed-in {
+  display: block;
+  margin-top: 20px;
+  font-size: 0.85rem;
+}
+
+button.link {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  text-decoration: underline;
+  font-size: inherit;
+}

@@ -73,6 +73,7 @@ export interface Config {
     invites: Invite;
     sites: Site;
     'auth-sessions': AuthSession;
+    'device-authorizations': DeviceAuthorization;
     'payload-kv': PayloadKv;
     'payload-locked-documents': PayloadLockedDocument;
     'payload-preferences': PayloadPreference;
@@ -86,6 +87,7 @@ export interface Config {
     invites: InvitesSelect<false> | InvitesSelect<true>;
     sites: SitesSelect<false> | SitesSelect<true>;
     'auth-sessions': AuthSessionsSelect<false> | AuthSessionsSelect<true>;
+    'device-authorizations': DeviceAuthorizationsSelect<false> | DeviceAuthorizationsSelect<true>;
     'payload-kv': PayloadKvSelect<false> | PayloadKvSelect<true>;
     'payload-locked-documents': PayloadLockedDocumentsSelect<false> | PayloadLockedDocumentsSelect<true>;
     'payload-preferences': PayloadPreferencesSelect<false> | PayloadPreferencesSelect<true>;
@@ -238,6 +240,25 @@ export interface AuthSession {
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "device-authorizations".
+ */
+export interface DeviceAuthorization {
+  id: number;
+  deviceCodeHash: string;
+  userCode: string;
+  deviceName?: string | null;
+  status: 'pending' | 'approved' | 'denied' | 'consumed';
+  /**
+   * Who approved it.
+   */
+  user?: (number | null) | User;
+  expiresAt: string;
+  lastPolledAt?: string | null;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "payload-kv".
  */
 export interface PayloadKv {
@@ -283,6 +304,10 @@ export interface PayloadLockedDocument {
     | ({
         relationTo: 'auth-sessions';
         value: number | AuthSession;
+      } | null)
+    | ({
+        relationTo: 'device-authorizations';
+        value: number | DeviceAuthorization;
       } | null);
   globalSlug?: string | null;
   user: {
@@ -417,6 +442,21 @@ export interface AuthSessionsSelect<T extends boolean = true> {
   expiresAt?: T;
   lastUsedAt?: T;
   revokedAt?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "device-authorizations_select".
+ */
+export interface DeviceAuthorizationsSelect<T extends boolean = true> {
+  deviceCodeHash?: T;
+  userCode?: T;
+  deviceName?: T;
+  status?: T;
+  user?: T;
+  expiresAt?: T;
+  lastPolledAt?: T;
   updatedAt?: T;
   createdAt?: T;
 }

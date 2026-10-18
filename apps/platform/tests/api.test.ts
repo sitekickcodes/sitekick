@@ -207,3 +207,40 @@ describe('deleting', () => {
     expect(invites.totalDocs).toBe(0)
   })
 })
+
+describe('device sign-in', () => {
+  const start = async () => (await api('/v1/auth/device', { body: { deviceName: 'Test desktop' } })).body
+  const poll = (deviceCode: string) => api('/v1/auth/device/token', { body: { deviceCode } })
+
+  test('pending, then approved once, then spent', async () => {
+    const started = await start()
+    expect(started.userCode).toMatch(/^[A-Z0-9]{4}-[A-Z0-9]{4}$/)
+    expect(started.verificationUriComplete).toContain(`/activate?code=${started.userCode}`)
+
+    expect((await poll(started.deviceCode)).body.error).toBe('authorization_pending')
+    expect((await poll(started.deviceCode)).body.error).toBe('slow_down')
+
+    const { decideDeviceAuthorization } = await import('../src/lib/device')
+    const client = (await payload.find({ collection: 'users', where: { email: { equals: CLIENT_EMAIL } }, overrideAccess: true })).docs[0]
+    // Codes are accepted as typed: lower case, no dash.
+    const typed = started.userCode.replace('-', '').toLowerCase()
+    expect(await decideDeviceAuthorization(payload, typed, client!, 'approved')).toBe(true)
+
+    const approved = await poll(started.deviceCode)
+    expect(approved.status).toBe(200)
+    expect(approved.body.user.email).toBe(CLIENT_EMAIL)
+    expect((await api('/v1/me/sites', { token: approved.body.accessToken })).status).toBe(200)
+
+    expect((await poll(started.deviceCode)).body.error).toBe('expired_token')
+  })
+
+  test('denied, unknown and already-decided codes', async () => {
+    const started = await start()
+    const { decideDeviceAuthorization } = await import('../src/lib/device')
+    const client = (await payload.find({ collection: 'users', where: { email: { equals: CLIENT_EMAIL } }, overrideAccess: true })).docs[0]
+    expect(await decideDeviceAuthorization(payload, started.userCode, client!, 'denied')).toBe(true)
+    expect(await decideDeviceAuthorization(payload, started.userCode, client!, 'approved')).toBe(false)
+    expect((await poll(started.deviceCode)).body.error).toBe('access_denied')
+    expect((await poll('skd_not-a-real-code')).body.error).toBe('expired_token')
+  })
+})
