@@ -244,3 +244,26 @@ describe('device sign-in', () => {
     expect((await poll('skd_not-a-real-code')).body.error).toBe('expired_token')
   })
 })
+
+describe('site connection', () => {
+  test('saving a site records a connection check; only staff can re-verify', async () => {
+    const staff = (await login(STAFF_EMAIL)).body
+    const acme = (await payload.find({ collection: 'organizations', where: { slug: { equals: 'acme' } }, overrideAccess: true })).docs[0]
+    const created = await api('/sites', {
+      method: 'POST',
+      token: staff.accessToken,
+      body: { organization: acme!.id, name: 'Connection test', slug: `conn-${unique}`, githubRepo: 'sitekickcodes/acme', vercelProjectId: 'acme-site' },
+    })
+    expect(created.status).toBe(201)
+    // The test server has no GitHub/Vercel credentials.
+    expect(created.body.doc.connection.status).toBe('not_configured')
+
+    const client = (await login(CLIENT_EMAIL)).body
+    expect((await api(`/v1/sites/${created.body.doc.id}/verify`, { method: 'POST', token: client.accessToken })).status).toBe(403)
+    const verified = await api(`/v1/sites/${created.body.doc.id}/verify`, { method: 'POST', token: staff.accessToken })
+    expect(verified.status).toBe(200)
+    expect(verified.body.connection.status).toBe('not_configured')
+
+    await payload.delete({ collection: 'sites', id: created.body.doc.id, overrideAccess: true })
+  })
+})

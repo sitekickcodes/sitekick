@@ -1,5 +1,6 @@
 import * as migration_20261015_181436_initial from './20261015_181436_initial';
 import * as migration_20261018_231958_device_authorizations from './20261018_231958_device_authorizations';
+import * as migration_20261018_233736_site_connection from './20261018_233736_site_connection';
 
 export const migrations = [
   {
@@ -10,6 +11,11 @@ export const migrations = [
   {
     up: migration_20261018_231958_device_authorizations.up,
     down: migration_20261018_231958_device_authorizations.down,
-    name: '20261018_231958_device_authorizations'
+    name: '20261018_231958_device_authorizations',
+  },
+  {
+    up: migration_20261018_233736_site_connection.up,
+    down: migration_20261018_233736_site_connection.down,
+    name: '20261018_233736_site_connection'
   },
 ];

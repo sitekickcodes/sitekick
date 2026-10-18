@@ -213,9 +213,28 @@ export interface Site {
    * owner/repo, for example sitekickcodes/yimby-website
    */
   githubRepo?: string | null;
+  /**
+   * Branch agents work from. Filled from GitHub when left blank.
+   */
   defaultBranch?: string | null;
+  /**
+   * Project name or ID in the Sitekick Vercel team, for example yimby-website
+   */
   vercelProjectId?: string | null;
   publishPolicy: 'staff-approval' | 'direct';
+  /**
+   * Checked every time you save.
+   */
+  connection?: {
+    status?: ('ok' | 'problem' | 'not_configured' | 'unchecked') | null;
+    message?: string | null;
+    checkedAt?: string | null;
+    githubInstallationId?: number | null;
+    githubRepoId?: number | null;
+    githubCanPush?: boolean | null;
+    vercelProjectId?: string | null;
+    vercelProjectName?: string | null;
+  };
   updatedAt: string;
   createdAt: string;
 }
@@ -427,6 +446,18 @@ export interface SitesSelect<T extends boolean = true> {
   defaultBranch?: T;
   vercelProjectId?: T;
   publishPolicy?: T;
+  connection?:
+    | T
+    | {
+        status?: T;
+        message?: T;
+        checkedAt?: T;
+        githubInstallationId?: T;
+        githubRepoId?: T;
+        githubCanPush?: T;
+        vercelProjectId?: T;
+        vercelProjectName?: T;
+      };
   updatedAt?: T;
   createdAt?: T;
 }

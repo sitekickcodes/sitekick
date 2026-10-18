@@ -16,6 +16,7 @@ import { authEndpoints } from './endpoints/v1/auth'
 import { deviceEndpoints } from './endpoints/v1/device'
 import { inviteEndpoints } from './endpoints/v1/invites'
 import { meEndpoints } from './endpoints/v1/me'
+import { siteEndpoints } from './endpoints/v1/sites'
 
 const filename = fileURLToPath(import.meta.url)
 const dirname = path.dirname(filename)
@@ -36,7 +37,7 @@ export default buildConfig({
     meta: { titleSuffix: ' · Sitekick' },
   },
   collections: [Users, Organizations, Memberships, Invites, Sites, AuthSessions, DeviceAuthorizations],
-  endpoints: [...authEndpoints, ...deviceEndpoints, ...meEndpoints, ...inviteEndpoints],
+  endpoints: [...authEndpoints, ...deviceEndpoints, ...meEndpoints, ...inviteEndpoints, ...siteEndpoints],
   // Clients use REST; no GraphQL surface to secure.
   graphQL: { disable: true },
   secret: process.env.PAYLOAD_SECRET || '',
