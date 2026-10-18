@@ -16,6 +16,7 @@ Architecture, domain model and milestones are in docs/architecture.md. Setup is 
 ## Platform (`apps/platform`)
 
 - The schema changes only through migrations (`push: false`). After changing a collection, run `bun run generate:types`, `bun run migrate:create <name>` and `bun run migrate`, and commit the migration and `src/payload-types.ts` together.
+- Restart the dev server after changing collection hooks or config. Hot reload doesn't pick them up, and stale hooks fail silently with a generic 500.
 - Access control lives in `src/access`. Staff (`users.kind = 'staff'`) see everything. Clients see organizations and sites only through `memberships`. New collections need explicit access rules, never Payload's defaults.
 - Client tokens are ours (`src/auth`), not Payload's. Refresh tokens and invite tokens are stored only as SHA-256 hashes.
 - Before committing platform changes, run `bun run typecheck`, then `bun test` against a running dev server on a seeded database (`bun run db:local`, `migrate`, `seed --demo`, `dev`).

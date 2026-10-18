@@ -160,3 +160,50 @@ describe('invites', () => {
     expect(sites.body.sites.length).toBeGreaterThanOrEqual(2)
   })
 })
+
+describe('deleting', () => {
+  test('staff can delete a user who has memberships and device sessions', async () => {
+    const acme = (await payload.find({ collection: 'organizations', where: { slug: { equals: 'acme' } }, overrideAccess: true })).docs[0]
+    const email = `delete-me-${unique}@example.com`
+    const user = await payload.create({
+      collection: 'users',
+      data: { email, password: PASSWORD, name: 'Delete me', kind: 'client' },
+      overrideAccess: true,
+    })
+    await payload.create({ collection: 'memberships', data: { user: user.id, organization: acme!.id, role: 'viewer' }, overrideAccess: true })
+    expect((await login(email)).status).toBe(200) // creates an auth-session
+
+    const staff = (await login(STAFF_EMAIL)).body
+    const res = await api(`/users/${user.id}`, { method: 'DELETE', token: staff.accessToken })
+    expect(res.status).toBe(200)
+
+    const left = await payload.count({ collection: 'memberships', where: { user: { equals: user.id } }, overrideAccess: true })
+    expect(left.totalDocs).toBe(0)
+    const sessions = await payload.count({ collection: 'auth-sessions', where: { user: { equals: user.id } }, overrideAccess: true })
+    expect(sessions.totalDocs).toBe(0)
+  })
+
+  test('an organization with sites cannot be deleted; an empty one can', async () => {
+    const staff = (await login(STAFF_EMAIL)).body
+    const org = await payload.create({
+      collection: 'organizations',
+      data: { name: 'Temp Co', slug: `temp-${unique}`, kind: 'client' },
+      overrideAccess: true,
+    })
+    const site = await payload.create({
+      collection: 'sites',
+      data: { organization: org.id, name: 'Temp site', slug: `temp-site-${unique}`, publishPolicy: 'staff-approval' },
+      overrideAccess: true,
+    })
+    await payload.create({ collection: 'invites', data: { email: `x-${unique}@example.com`, organization: org.id, role: 'viewer' }, overrideAccess: true })
+
+    const blocked = await api(`/organizations/${org.id}`, { method: 'DELETE', token: staff.accessToken })
+    expect(blocked.status).toBe(400)
+
+    await payload.delete({ collection: 'sites', id: site.id, overrideAccess: true })
+    const ok = await api(`/organizations/${org.id}`, { method: 'DELETE', token: staff.accessToken })
+    expect(ok.status).toBe(200)
+    const invites = await payload.count({ collection: 'invites', where: { organization: { equals: org.id } }, overrideAccess: true })
+    expect(invites.totalDocs).toBe(0)
+  })
+})

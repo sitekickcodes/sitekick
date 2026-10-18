@@ -27,6 +27,15 @@ export const Users: CollectionConfig = {
     update: staffOrSelf,
   },
   hooks: {
+    // memberships.user and auth-sessions.user are required, so their foreign
+    // keys can't null out: remove those rows first, in the same transaction.
+    beforeDelete: [
+      async ({ id, req }) => {
+        for (const collection of ['auth-sessions', 'memberships'] as const) {
+          await req.payload.delete({ collection, where: { user: { equals: id } }, overrideAccess: true, req })
+        }
+      },
+    ],
     beforeChange: [
       // The first account (the admin's "create first user" screen) has to be
       // staff, or nobody could ever reach the admin panel.
