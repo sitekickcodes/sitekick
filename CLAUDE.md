@@ -23,7 +23,7 @@ Architecture, domain model and milestones are in docs/architecture.md. Setup is 
 - Production is https://sitekick-platform.vercel.app on Neon (apps/platform/README.md, "Production"). Deploy with `vercel deploy --prod --scope sitekick` from `apps/platform`, and migrations run in the build.
 - **Never run `vercel env pull` or `neon env pull` in `apps/platform`**: Vercel's Development environment points at the production database. Local work uses `bun run db:local`.
 - **Never send writes to production to test something**, such as creating users or calling `first-register`. Use read-only checks, and run the test suite against `db:local` only.
-- Payload stays on 3.x until Payload 4 is stable.
+- Payload is pinned to yimby-website's version (3.90.2). Upgrades land in yimby first as the test bed, then here, so don't upgrade Payload on its own.
 
 ## Desktop (`apps/desktop`)
 
