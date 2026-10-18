@@ -20,6 +20,10 @@ Architecture, domain model and milestones are in docs/architecture.md. Setup is 
 - Client tokens are ours (`src/auth`), not Payload's. Refresh tokens and invite tokens are stored only as SHA-256 hashes.
 - Before committing platform changes, run `bun run typecheck`, then `bun test` against a running dev server on a seeded database (`bun run db:local`, `migrate`, `seed --demo`, `dev`).
 - `.claude/launch.json` has `platform-dev` for the browser pane, which needs `bun run db:local` running.
+- Production is https://sitekick-platform.vercel.app on Neon (apps/platform/README.md, "Production"). Deploy with `vercel deploy --prod --scope sitekick` from `apps/platform`, and migrations run in the build.
+- **Never run `vercel env pull` or `neon env pull` in `apps/platform`**: Vercel's Development environment points at the production database. Local work uses `bun run db:local`.
+- **Never send writes to production to test something**, such as creating users or calling `first-register`. Use read-only checks, and run the test suite against `db:local` only.
+- Payload stays on 3.x until Payload 4 is stable.
 
 ## Desktop (`apps/desktop`)
 

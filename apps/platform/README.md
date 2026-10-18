@@ -62,9 +62,32 @@ Payload's own REST routes (`/api/sites`, `/api/organizations`, …) accept the s
 - Clients see an organization, and its sites, only through a `memberships` row. Only staff can create organizations, sites, memberships and invites in v1.
 - Invites: staff create one in the admin, and the invitee gets an email with `/invite/<token>` (7-day expiry, stored hashed). With no email adapter configured, Payload logs the email to the console.
 
-## Not done yet (before production)
+## Production
 
-- A Vercel project and a production Postgres (Neon through the Vercel Marketplace)
-- Running migrations on deploy (yimby uses a `deploy-migrate.sh` build step)
-- An email adapter for invites and password resets
-- Per-IP rate limiting on `/api/v1/auth/login` (a Vercel Firewall rule). Per-account lockout is already on.
+| | |
+| --- | --- |
+| URL | https://sitekick-platform.vercel.app (admin at `/admin`) |
+| Vercel | Project `sitekick-platform`, Sitekick team. Functions run in `pdx1` (`vercel.json`). |
+| Database | Neon project `sitekick-platform` (`wild-heart-85777886`) in the Sitekick org, AWS US West 2 (Oregon), branch `production`. Linked to this directory by `.neon` and declared in `neon.ts` (Postgres only). |
+| Env | The Neon Vercel integration manages `DATABASE_URL` (pooled) and `DATABASE_URL_UNPOOLED`. We set `PAYLOAD_SECRET` (sensitive) and `PLATFORM_URL`. |
+
+**Deploy** (CLI, from `apps/platform`, until GitHub is connected):
+
+```bash
+vercel deploy --prod --scope sitekick
+```
+
+The build runs `scripts/vercel-build.sh`. On production it first runs pending migrations over `DATABASE_URL_UNPOOLED` (Neon's direct connection; pooled pgBouncer connections can break DDL), and a failed migration fails the deploy. Previews never migrate. `.vercelignore` keeps `.env*`, `.neon` and `.local-db` out of CLI uploads.
+
+**Rules:**
+
+- **Never run `vercel env pull` or `neon env pull` here.** The integration also points Vercel's Development environment at the production branch, so a pull would put production credentials in `.env`/`.env.local`, and local dev, migrations and tests would hit production. Local work uses `bun run db:local`. (`neon init` pulls by default, so pass `--no-env-pull` to any Neon command that offers it.)
+- **Sign in to the admin only at `https://sitekick-platform.vercel.app`.** `PLATFORM_URL` sets Payload's CSRF/CORS origin, so the admin rejects sign-ins and saves made from per-deployment URLs (`sitekick-platform-…-sitekick.vercel.app`).
+- **Never write to production to test something.** Use read-only checks (`/api/users/init`, unauthenticated `/api/v1/*` returning 401). The full test suite runs only against `db:local`.
+
+## Not done yet
+
+- **GitHub connection** for Git deploys, with root directory `apps/platform`. Then the Neon integration can create a database branch per preview, and previews can migrate their own branch.
+- **An email adapter** for invites and password resets. Payload logs emails to the function logs until then.
+- **Per-IP rate limiting** on `/api/v1/auth/login` (a Vercel Firewall rule). Per-account lockout is already on.
+- **The Sitekick agency organization** in production. Create it in the admin (`seed` only runs against local databases).

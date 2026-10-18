@@ -14,7 +14,7 @@ A platform where Sitekick staff and our clients' marketing teams edit client web
 | Where editing runs | Cloud sandboxes: one Vercel Sandbox per editing session, holding the checked-out repo, a dev server and the agent. Clients install nothing. | Decided |
 | What a site is (v1) | A GitHub repo plus a Vercel project, built on our Next.js + Payload stack. Changes ship as branches and PRs. | Decided |
 | Desktop client | Native SDK (this repo) | Decided |
-| Platform backend | Next.js 16 + Payload 3 on Vercel, with Payload's own auth for now. We may move to Better Auth or Clerk later if clients need SSO, social login or MFA. | Decided |
+| Platform backend | Next.js 16 + Payload 3 on Vercel (stay on 3.x until Payload 4 is stable; it's in beta as of 2026-10-18), with Payload's own auth for now. We may move to Better Auth or Clerk later if clients need SSO, social login or MFA. | Decided |
 
 ## Platform backend: Payload or Clerk?
 
@@ -166,7 +166,7 @@ The Native SDK core can't import npm packages. Shared API types are generated fr
 
 | # | Milestone | Done when |
 | --- | --- | --- |
-| M0 | Platform skeleton | Payload app deployed on Vercel with Postgres. Users, organizations, memberships, invites and sites exist. Staff can sign in to the admin. **Status:** built and tested locally, including `/api/v1` auth, me, sites and invites. Remaining: the Vercel project, Neon, migrations on deploy, an email adapter, and login rate limiting. |
+| M0 | Platform skeleton | Payload app deployed on Vercel with Postgres. Users, organizations, memberships, invites and sites exist. Staff can sign in to the admin. **Status: done (2026-10-18).** Live at https://sitekick-platform.vercel.app on Neon (Sitekick org, Oregon), with migrations on deploy and the first staff account created. Hardening carried forward: GitHub connection with per-preview Neon branches, an email adapter, and login rate limiting (apps/platform/README.md, "Not done yet"). |
 | M1 | Desktop sign-in + site picker | Sign in through `/api/v1/auth/*`, keychain session, `/api/v1/me/sites`, auto-open for one site, picker for several, switch site, sign out. |
 | M2 | Site connection | GitHub App installed and Vercel project linked. Staff register a site in the admin and the platform verifies access. |
 | M3 | Editing session + preview | Opening a site boots a sandbox from a snapshot and shows the live preview in the WebView. Idle shutdown and resume work. |
