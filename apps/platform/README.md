@@ -87,6 +87,33 @@ The build runs `scripts/vercel-build.sh`. On production it first runs pending mi
 - **Sign in to the admin only at `https://sitekick-platform.vercel.app`.** `PLATFORM_URL` sets Payload's CSRF/CORS origin, so the admin rejects sign-ins and saves made from per-deployment URLs (`sitekick-platform-…-sitekick.vercel.app`).
 - **Never write to production to test something.** Use read-only checks (`/api/users/init`, unauthenticated `/api/v1/*` returning 401). The full test suite runs only against `db:local`.
 
+## Site connections (GitHub App + Vercel)
+
+Each site's **Connection** panel in the admin is re-checked on every save, and by staff with `POST /api/v1/sites/:id/verify`. The check confirms the Sitekick GitHub App is installed on the repo and can push, and that the Vercel project deploys that same repo. Code: `src/lib/connections/`.
+
+**One-time setup:**
+
+1. **Create the GitHub App** in the `sitekickcodes` org: Settings → Developer settings → GitHub Apps → New GitHub App.
+   - Name `Sitekick` (or `Sitekick Platform` if taken). Homepage `https://sitekick-platform.vercel.app`.
+   - Webhook: uncheck **Active** (no webhooks yet).
+   - Repository permissions: **Contents: Read and write**, **Pull requests: Read and write**, **Metadata: Read-only**.
+   - Where it can be installed: **Any account**, so client-owned GitHub orgs can install it later.
+   - After creating, note the **App ID** and the slug in the app's URL, then **Generate a private key**, which downloads a `.pem` file.
+   - **Install App** on `sitekickcodes`, for all repos or the ones Sitekick manages.
+2. **Create a Vercel token** at vercel.com/account/settings/tokens, scoped to the **Sitekick** team.
+3. **Set the variables** on Production, from `apps/platform`. `VERCEL_TEAM_ID` is already set.
+
+   ```bash
+   vercel env add GITHUB_APP_ID production --scope sitekick
+   vercel env add GITHUB_APP_SLUG production --scope sitekick
+   vercel env add GITHUB_APP_PRIVATE_KEY production --scope sitekick --sensitive < path/to/app.private-key.pem
+   vercel env add VERCEL_API_TOKEN production --scope sitekick --sensitive
+   ```
+
+   Then redeploy (`vercel deploy --prod --scope sitekick`) and delete the downloaded `.pem`.
+
+Without these, the panel shows **Platform not configured**. For local checks, put the same variables in `.env`; the test suite doesn't need them.
+
 ## Not done yet
 
 - **GitHub connection** for Git deploys, with root directory `apps/platform`. Then the Neon integration can create a database branch per preview, and previews can migrate their own branch.
