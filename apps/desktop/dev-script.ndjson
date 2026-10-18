@@ -1,0 +1,49 @@
+# The sign-in and site-picker loop, headless:
+#   native dev --core --script dev-script.ndjson
+# The network is scripted: each parked `cmd fetch` in the transcript is
+# answered by dispatching its result Msg. JSON bodies go through the REAL
+# api service. The devhost keeps credentials in memory.
+
+# Boot: no last site, no session -> signed out.
+{"settle": true}
+
+# Browser sign-in starts: the platform returns a device code.
+{"kind":"sign_in"}
+{"kind":"device_started","status":200,"body":{"$bytes":"{\"deviceCode\":\"skd_test\",\"userCode\":\"KVD8-VWJ2\",\"verificationUri\":\"http://localhost:3100/activate\",\"verificationUriComplete\":\"http://localhost:3100/activate?code=KVD8-VWJ2\",\"expiresIn\":600,\"interval\":3}"}}
+{"settle": true}
+
+# Polls: first still pending, then approved with tokens.
+{"advance": 3000}
+{"settle": true}
+{"kind":"polled","status":400,"body":{"$bytes":"{\"error\":\"authorization_pending\"}"}}
+{"advance": 3000}
+{"settle": true}
+{"kind":"polled","status":200,"body":{"$bytes":"{\"accessToken\":\"acc_1\",\"accessTokenExpiresAt\":\"2026-10-18T23:00:00.000Z\",\"refreshToken\":\"skr_1\",\"user\":{\"id\":2,\"email\":\"marketer@acme.example.com\",\"name\":\"Avery Marketer\",\"kind\":\"client\"}}"}}
+{"settle": true}
+
+# Sites load (two of them) -> the picker.
+{"kind":"sites_fetched","status":200,"body":{"$bytes":"{\"sites\":[{\"id\":2,\"name\":\"Acme careers\",\"slug\":\"acme-careers\",\"productionUrl\":\"https://careers.acme.example.com\",\"organization\":{\"id\":2,\"name\":\"Acme Co\",\"slug\":\"acme\",\"kind\":\"client\"},\"role\":\"editor\"},{\"id\":1,\"name\":\"Acme marketing site\",\"slug\":\"acme-marketing\",\"productionUrl\":\"https://acme.example.com\",\"organization\":{\"id\":2,\"name\":\"Acme Co\",\"slug\":\"acme\",\"kind\":\"client\"},\"role\":\"editor\"}]}"}}
+{"settle": true}
+
+# Open one; it's remembered as the last site.
+{"kind":"open_site","id":1}
+{"settle": true}
+
+# Relaunch: the session in the keychain is refreshed and the picker comes
+# back with the last site highlighted.
+{"restart": true}
+{"settle": true}
+{"kind":"refreshed","status":200,"body":{"$bytes":"{\"accessToken\":\"acc_2\",\"accessTokenExpiresAt\":\"2026-10-18T23:15:00.000Z\",\"refreshToken\":\"skr_2\",\"user\":{\"id\":2,\"email\":\"marketer@acme.example.com\",\"name\":\"Avery Marketer\",\"kind\":\"client\"}}"}}
+{"settle": true}
+{"kind":"sites_fetched","status":401,"body":{"$bytes":"{\"error\":\"unauthenticated\"}"}}
+{"settle": true}
+{"kind":"refreshed","status":200,"body":{"$bytes":"{\"accessToken\":\"acc_3\",\"accessTokenExpiresAt\":\"2026-10-18T23:30:00.000Z\",\"refreshToken\":\"skr_3\",\"user\":{\"id\":2,\"email\":\"marketer@acme.example.com\",\"name\":\"Avery Marketer\",\"kind\":\"client\"}}"}}
+{"settle": true}
+{"kind":"sites_fetched","status":200,"body":{"$bytes":"{\"sites\":[{\"id\":1,\"name\":\"Acme marketing site\",\"slug\":\"acme-marketing\",\"productionUrl\":\"https://acme.example.com\",\"organization\":{\"id\":2,\"name\":\"Acme Co\",\"slug\":\"acme\",\"kind\":\"client\"},\"role\":\"editor\"}]}"}}
+{"settle": true}
+
+# Sign out: the platform session is revoked and the keychain entry goes.
+{"kind":"sign_out"}
+{"settle": true}
+{"kind":"logged_out","status":204,"body":{"$bytes":""}}
+{"settle": true}

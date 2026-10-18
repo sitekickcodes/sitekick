@@ -13,19 +13,23 @@
     ],
     "permissions": [
         "view",
-        "command"
+        "command",
+        "network",
+        "credentials"
     ],
     "capabilities": [
         "native_views",
-        "gpu_surfaces"
+        "gpu_surfaces",
+        "credentials",
+        "store"
     ],
     "shell": {
         "windows": [
             {
                 "label": "main",
                 "title": "Sitekick",
-                "width": 1280,
-                "height": 800,
+                "width": 1100,
+                "height": 720,
                 "views": [
                     {
                         "label": "main-canvas",
@@ -51,7 +55,11 @@
                 "zero://inline"
             ],
             "external_links": {
-                "action": "deny"
+                "action": "open_system_browser",
+                "allowed_urls": [
+                    "https://sitekick-platform.vercel.app/activate*",
+                    "http://localhost:3100/activate*"
+                ]
             }
         }
     },

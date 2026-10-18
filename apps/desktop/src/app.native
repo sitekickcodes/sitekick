@@ -1,25 +1,115 @@
-<!-- The whole view: markup over the core's model. Embedded at build
-     time and hot-reloaded while `native dev` runs. Validate with:
+<!-- The whole view: one block per screen (core.ts `Screen`). Embedded at
+     build time and hot-reloaded while `native dev` runs. Validate with:
      native check -->
-<row grow="1">
-  <if test="{sidebarOpen}">
-    <column gap="8" padding="16" width="220">
-      <row gap="8" cross="center">
-        <text size="sm" foreground="text_muted" grow="1">Sites</text>
-        <button size="sm" variant="ghost" on-press="hide_sidebar">Hide</button>
-      </row>
-      <text foreground="text_muted">No sites yet</text>
+<column grow="1" background="background">
+  <if test="{starting}">
+    <column grow="1" main="center" cross="center" gap="12">
+      <spinner />
+      <text foreground="text_muted">Starting Sitekick…</text>
     </column>
-    <separator />
   </if>
-  <column gap="8" padding="16" grow="1" main="center" cross="center">
-    <text size="heading">Sitekick</text>
-    <text foreground="text_muted">An agentic workspace for client sites.</text>
-    <if test="{sidebarOpen}">
-      <text size="sm" foreground="text_muted">Pick a site to start</text>
-    </if>
-    <else>
-      <button size="sm" variant="ghost" on-press="show_sidebar">Show sites</button>
-    </else>
-  </column>
-</row>
+
+  <if test="{isSignedOut}">
+    <column grow="1" main="center" cross="center">
+      <panel padding="28" background="surface" radius="lg" width="380">
+        <column gap="14">
+          <text size="heading">Sitekick</text>
+          <text wrap="true" foreground="text_muted">Sign in with your browser to work on your sites.</text>
+          <if test="{hasNotice}">
+            <text wrap="true" size="sm" foreground="text_muted">{notice}</text>
+          </if>
+          <button variant="primary" on-press="sign_in">Sign in with your browser</button>
+          <if test="{showRetry}">
+            <button variant="ghost" size="sm" on-press="retry">Try again</button>
+          </if>
+        </column>
+      </panel>
+    </column>
+  </if>
+
+  <if test="{awaitingApproval}">
+    <column grow="1" main="center" cross="center">
+      <panel padding="28" background="surface" radius="lg" width="380">
+        <column gap="14">
+          <text size="heading">Finish in your browser</text>
+          <text wrap="true" foreground="text_muted">Sign in on the page that just opened and check it shows this code:</text>
+          <text size="heading">{userCode}</text>
+          <row gap="8" cross="center">
+            <spinner />
+            <text size="sm" foreground="text_muted">Waiting for approval…</text>
+          </row>
+          <row gap="8">
+            <button variant="outline" on-press="open_browser">Open the page again</button>
+            <spacer grow="1" />
+            <button variant="ghost" on-press="cancel_sign_in">Cancel</button>
+          </row>
+        </column>
+      </panel>
+    </column>
+  </if>
+
+  <if test="{loadingSites}">
+    <column grow="1" main="center" cross="center" gap="12">
+      <spinner />
+      <text foreground="text_muted">Loading your sites…</text>
+    </column>
+  </if>
+
+  <if test="{pickingSite}">
+    <column grow="1" padding="32" gap="16">
+      <row gap="8" cross="center">
+        <text size="heading" grow="1">{pickerTitle}</text>
+        <text size="sm" foreground="text_muted">{userEmail}</text>
+        <button variant="ghost" size="sm" on-press="sign_out">Sign out</button>
+      </row>
+      <if test="{showSearch}">
+        <search-field placeholder="Search sites or clients" text="{query}" on-input="query_edited" />
+      </if>
+      <if test="{hasSites}">
+        <scroll grow="1" label="Sites">
+          <column gap="8">
+            <for each="visibleSites" as="site" key="slug">
+              <list-item padding="14" gap="12" cross="center" selected="{site.id == lastSiteId}" on-press="open_site:{site.id}" role="listitem" label="{site.name}">
+                <column gap="2" grow="1">
+                  <text>{site.name}</text>
+                  <text size="sm" foreground="text_muted">{site.orgName} · {site.productionUrl}</text>
+                </column>
+                <badge variant="secondary">{site.role}</badge>
+              </list-item>
+            </for>
+            <if test="{noMatches}">
+              <text foreground="text_muted">No sites match.</text>
+            </if>
+          </column>
+        </scroll>
+      </if>
+      <else>
+        <text wrap="true" foreground="text_muted">{emptyHelp}</text>
+      </else>
+    </column>
+  </if>
+
+  <if test="{inWorkspace}">
+    <row grow="1">
+      <column gap="10" padding="20" width="260" background="surface">
+        <text size="lg">{siteName}</text>
+        <text size="sm" foreground="text_muted">{siteOrg}</text>
+        <text size="sm" foreground="text_muted" wrap="true">{siteUrl}</text>
+        <row>
+          <badge variant="secondary">{siteRole}</badge>
+        </row>
+        <spacer grow="1" />
+        <if test="{canSwitchSite}">
+          <button variant="outline" on-press="switch_site">Switch site</button>
+        </if>
+        <text size="sm" foreground="text_muted">{userEmail}</text>
+        <button variant="ghost" size="sm" on-press="sign_out">Sign out</button>
+      </column>
+      <separator />
+      <column grow="1" main="center" cross="center" gap="8" padding="24">
+        <text size="heading">{siteName}</text>
+        <text foreground="text_muted">The live preview and agent chat arrive in M3 and M4.</text>
+      </column>
+    </row>
+  </if>
+</column>
