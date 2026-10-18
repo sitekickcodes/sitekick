@@ -34,8 +34,17 @@ Architecture, domain model and milestones are in docs/architecture.md. Setup is 
 - SDK 0.11.0 workaround: `NATIVE_SDK_PATH` must point at the v0.11.0 source checkout (apps/desktop/README.md, "Workaround"), or every build fails ([vercel-labs/native#713](https://github.com/vercel-labs/native/issues/713)). Remove the workaround once a fixed release ships.
 - `Msg` must be a kind-tagged union with at least two variants, and markup conditionals use `<if>`/`<else>`, not `!`. `native check` and `native build` catch both.
 - Keep `tsconfig.json` mirroring the Native checker's options.
+- Core subset gotchas we've hit (`native check` misses some; `native test` and `native build` catch them):
+  - Every `Cmd` is built inline in `update`'s return. No helpers that return commands, and no `Cmd.batch`, so sequences chain through Msgs.
+  - Use function declarations, not arrow-function constants.
+  - No `JSON` in the core: decode in `src/services/`. `Uint8Array.indexOf`/`includes(bytes)` don't compile, so use loops or `containsIgnoreCase`.
+  - A `<for>` key must be a proven integer or bytes field. A number from a service isn't proven, so key on bytes (for example `slug`).
+  - Every fetch `ok` arm should read its `status`, or the shared dispatcher fails integer proofs (SC4022).
+- Secrets (tokens, device codes) never go in the Model. They live in the Keychain via `Cmd.credentials` and are read just before the request that needs them.
 
 ### Desktop architecture
+
+- The platform URL defaults to production; `SITEKICK_API_URL=http://localhost:3100 native dev` targets a local platform.
 
 - `src/core.ts` is the deterministic core, in the checked TS subset: `Model`, `Msg`, a pure `update`, and binding helpers. No I/O, no npm packages, and no imports from `src/services/`. Effects are returned as `Cmd`s, and recurring ones are declared with `Sub`.
 - `src/app.native` is the view. Markup only reads model fields or helpers and dispatches `Msg` kinds. It never mutates state.

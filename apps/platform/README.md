@@ -49,12 +49,14 @@ Clients authenticate with `Authorization: Bearer <accessToken>`. Access tokens l
 | POST | `/api/v1/auth/login` | `{ email, password, deviceName? }` | `{ accessToken, accessTokenExpiresAt, refreshToken, user }`. Returns 401 for wrong credentials and 423 after 5 failed attempts (15-minute lock). |
 | POST | `/api/v1/auth/refresh` | `{ refreshToken }` | A new token pair |
 | POST | `/api/v1/auth/logout` | `{ refreshToken }` | 204. The device's access token stops working immediately. |
+| POST | `/api/v1/auth/device` | `{ deviceName? }` | Starts a browser sign-in: `{ deviceCode, userCode, verificationUri, verificationUriComplete, expiresIn, interval }`. The device code is valid for 10 minutes. |
+| POST | `/api/v1/auth/device/token` | `{ deviceCode }` | Poll every `interval` seconds. Returns 400 `authorization_pending` / `slow_down` / `access_denied` / `expired_token`, or the same token response as login once approved (only once). |
 | GET | `/api/v1/me` | | `{ user, memberships: [{ organization, role }] }` |
 | GET | `/api/v1/me/sites` | | `{ sites: [{ id, name, slug, productionUrl, organization, role }] }`, sorted by organization then name |
 | GET | `/api/v1/invites/:token` | | `{ email, organizationName, role, userExists }` |
 | POST | `/api/v1/invites/accept` | `{ token, name?, password? }` | Creates the account if needed, then the membership |
 
-Payload's own REST routes (`/api/sites`, `/api/organizations`, …) accept the same bearer tokens and enforce the same access rules. GraphQL is disabled.
+Payload's own REST routes (`/api/sites`, `/api/organizations`, …) accept the same bearer tokens and enforce the same access rules. GraphQL is disabled. The desktop app signs in through `/activate` (a web page: Payload cookie sign-in, then approve or deny the code) and never sends a password itself.
 
 ## Access model
 

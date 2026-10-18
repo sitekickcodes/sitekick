@@ -51,7 +51,7 @@ We already run our site stack on Payload 3 (yimby-website uses 3.90 with `plugin
 5. **Don't customize password hashing.** Moving hashes into Better Auth or Clerk without forcing resets is probably possible, but verify it at migration time.
 
 
-- **v1 login:** email and password through a native form in the desktop app. It calls our `POST /api/v1/auth/login` (which wraps Payload's login), stores the refresh token in the OS keychain (`Cmd.credentials`), and calls `/api/v1/auth/refresh` on launch. This is fine for a first-party app.
+- **v1 login (revised for M1):** browser sign-in with a device code (RFC 8628). Native SDK has no secure text field, and its guidance keeps passwords out of app state, so the desktop app never takes a password. It calls `POST /api/v1/auth/device`, opens `/activate` in the system browser, where the person signs in with Payload's cookie session and approves the code, and polls `/api/v1/auth/device/token` for the usual token pair, which goes into the Keychain.
 - **Later SSO:** when clients ask for SSO (for example Google Workspace), add a browser-based login. The desktop opens the system browser to the platform's `/desktop/login` page with a PKCE challenge, the user signs in there (password, Google, or anything else Payload supports), and the platform redirects to `sitekick://auth/callback` with a one-time code that the app exchanges for a token. The data model and API don't change, only how the token is issued.
 - **If we outgrow Payload auth:** plug an IdP (Clerk, Auth0, or WorkOS) into Payload as a custom auth strategy. Payload stays the system of record.
 
@@ -117,8 +117,9 @@ flowchart TD
   A[App launch] --> B{Refresh token<br/>in keychain?}
   B -- no --> L[Sign-in screen]
   B -- yes --> R[POST /api/v1/auth/refresh<br/>GET /api/v1/me/sites]
-  R -- 401 --> L
-  L -- email + password --> R
+  R -- 400/401 --> L
+  L -- Sign in with your browser --> D[Show code, open /activate,<br/>poll /api/v1/auth/device/token]
+  D -- approved --> R
   R --> C{How many sites?}
   C -- 0 --> E[Empty state<br/>client: contact Sitekick<br/>staff: add a site]
   C -- 1 --> W[Open workspace for that site]
@@ -129,8 +130,8 @@ flowchart TD
 ```
 
 - `GET /api/v1/me/sites` returns accessible sites with their organization and the user's role. Staff see every site, so the picker needs search and grouping from day one.
-- The last-used site is stored locally (Native SDK persistence) so the picker can preselect it. It never auto-opens a site unless the user has exactly one.
-- Tokens are kept only in the OS keychain, never in model persistence.
+- The last-used site is stored locally (`Cmd.store`) so the picker can highlight it. It never auto-opens a site unless the user has exactly one.
+- Tokens are kept only in the OS keychain (one `session` item), never in the Model. The core reads the item for each call and builds the header immediately.
 
 ## Desktop app (this repo)
 
@@ -167,7 +168,7 @@ The Native SDK core can't import npm packages. Shared API types are generated fr
 | # | Milestone | Done when |
 | --- | --- | --- |
 | M0 | Platform skeleton | Payload app deployed on Vercel with Postgres. Users, organizations, memberships, invites and sites exist. Staff can sign in to the admin. **Status: done (2026-10-18).** Live at https://sitekick-platform.vercel.app on Neon (Sitekick org, Oregon), with migrations on deploy and the first staff account created. Hardening carried forward: GitHub connection with per-preview Neon branches, an email adapter, and login rate limiting (apps/platform/README.md, "Not done yet"). |
-| M1 | Desktop sign-in + site picker | Sign in through `/api/v1/auth/*`, keychain session, `/api/v1/me/sites`, auto-open for one site, picker for several, switch site, sign out. |
+| M1 | Desktop sign-in + site picker | Sign in through `/api/v1/auth/*`, keychain session, `/api/v1/me/sites`, auto-open for one site, picker for several, switch site, sign out. **Status: done (2026-10-18).** Browser device sign-in instead of a password form, Keychain session with refresh-and-retry, picker or auto-open, last site remembered, sign-out with revocation. Tested headless (`dev-script.ndjson`) and in the real app against the local platform. |
 | M2 | Site connection | GitHub App installed and Vercel project linked. Staff register a site in the admin and the platform verifies access. |
 | M3 | Editing session + preview | Opening a site boots a sandbox from a snapshot and shows the live preview in the WebView. Idle shutdown and resume work. |
 | M4 | Agent chat | Chat in the right panel drives an agent in the sandbox. Events stream, edits show in the preview, and changes can be undone. |
