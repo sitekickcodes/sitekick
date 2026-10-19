@@ -72,6 +72,7 @@ export interface Config {
     memberships: Membership;
     invites: Invite;
     sites: Site;
+    sessions: Session;
     'auth-sessions': AuthSession;
     'device-authorizations': DeviceAuthorization;
     'payload-kv': PayloadKv;
@@ -86,6 +87,7 @@ export interface Config {
     memberships: MembershipsSelect<false> | MembershipsSelect<true>;
     invites: InvitesSelect<false> | InvitesSelect<true>;
     sites: SitesSelect<false> | SitesSelect<true>;
+    sessions: SessionsSelect<false> | SessionsSelect<true>;
     'auth-sessions': AuthSessionsSelect<false> | AuthSessionsSelect<true>;
     'device-authorizations': DeviceAuthorizationsSelect<false> | DeviceAuthorizationsSelect<true>;
     'payload-kv': PayloadKvSelect<false> | PayloadKvSelect<true>;
@@ -223,6 +225,43 @@ export interface Site {
   vercelProjectId?: string | null;
   publishPolicy: 'staff-approval' | 'direct';
   /**
+   * How an editing session runs this site in a Vercel Sandbox. Each session gets its own Neon branch of the parent branch, and DATABASE_URL and PAYLOAD_SECRET are set automatically.
+   */
+  sandbox?: {
+    /**
+     * Neon project ID in the Sitekick org, for example tiny-meadow-68727378
+     */
+    neonProjectId?: string | null;
+    /**
+     * Branch each session copies. Never production.
+     */
+    neonParentBranch?: string | null;
+    neonDatabase?: string | null;
+    neonRole?: string | null;
+    /**
+     * Blank: detected from the lockfile (bun install, npm ci, pnpm install).
+     */
+    installCommand?: string | null;
+    /**
+     * Optional. Runs before the dev server, for example: bun --bun ./node_modules/.bin/payload migrate --disable-transpile
+     */
+    migrateCommand?: string | null;
+    /**
+     * Must listen on 0.0.0.0:3000. Bypass scripts that switch env files (yimby: call next dev directly).
+     */
+    devCommand?: string | null;
+    /**
+     * Sandbox-only variables. Never production secrets. {{previewUrl}} is replaced with the session preview URL.
+     */
+    env?:
+      | {
+          name: string;
+          value?: string | null;
+          id?: string | null;
+        }[]
+      | null;
+  };
+  /**
    * Checked every time you save.
    */
   connection?: {
@@ -235,6 +274,45 @@ export interface Site {
     vercelProjectId?: string | null;
     vercelProjectName?: string | null;
   };
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "sessions".
+ */
+export interface Session {
+  id: number;
+  site: number | Site;
+  user: number | User;
+  status:
+    | 'starting'
+    | 'branching'
+    | 'booting'
+    | 'installing'
+    | 'migrating'
+    | 'starting_server'
+    | 'ready'
+    | 'failed'
+    | 'stopped';
+  previewUrl?: string | null;
+  gitBranch?: string | null;
+  sandboxName?: string | null;
+  neonProjectId?: string | null;
+  neonBranchId?: string | null;
+  error?: string | null;
+  /**
+   * Setup output (tail).
+   */
+  log?: string | null;
+  phaseStartedAt?: string | null;
+  /**
+   * When the sandbox stops unless extended by a heartbeat.
+   */
+  sandboxExpiresAt?: string | null;
+  lastActiveAt?: string | null;
+  readyAt?: string | null;
+  endedAt?: string | null;
   updatedAt: string;
   createdAt: string;
 }
@@ -319,6 +397,10 @@ export interface PayloadLockedDocument {
     | ({
         relationTo: 'sites';
         value: number | Site;
+      } | null)
+    | ({
+        relationTo: 'sessions';
+        value: number | Session;
       } | null)
     | ({
         relationTo: 'auth-sessions';
@@ -446,6 +528,24 @@ export interface SitesSelect<T extends boolean = true> {
   defaultBranch?: T;
   vercelProjectId?: T;
   publishPolicy?: T;
+  sandbox?:
+    | T
+    | {
+        neonProjectId?: T;
+        neonParentBranch?: T;
+        neonDatabase?: T;
+        neonRole?: T;
+        installCommand?: T;
+        migrateCommand?: T;
+        devCommand?: T;
+        env?:
+          | T
+          | {
+              name?: T;
+              value?: T;
+              id?: T;
+            };
+      };
   connection?:
     | T
     | {
@@ -458,6 +558,29 @@ export interface SitesSelect<T extends boolean = true> {
         vercelProjectId?: T;
         vercelProjectName?: T;
       };
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "sessions_select".
+ */
+export interface SessionsSelect<T extends boolean = true> {
+  site?: T;
+  user?: T;
+  status?: T;
+  previewUrl?: T;
+  gitBranch?: T;
+  sandboxName?: T;
+  neonProjectId?: T;
+  neonBranchId?: T;
+  error?: T;
+  log?: T;
+  phaseStartedAt?: T;
+  sandboxExpiresAt?: T;
+  lastActiveAt?: T;
+  readyAt?: T;
+  endedAt?: T;
   updatedAt?: T;
   createdAt?: T;
 }

@@ -2,6 +2,8 @@ import type { CollectionConfig } from 'payload'
 
 import { isStaff, staffOnly, staffOnlyField, staffOrSelf } from '../access'
 import { sitekickBearerStrategy } from '../auth/strategy'
+import { stopSession } from '../lib/sessions/orchestrate'
+import { ACTIVE_STATUSES } from './Sessions'
 
 /**
  * Everyone who signs in: Sitekick staff and client team members. Staff reach
@@ -31,7 +33,16 @@ export const Users: CollectionConfig = {
     // keys can't null out: remove those rows first, in the same transaction.
     beforeDelete: [
       async ({ id, req }) => {
-        for (const collection of ['auth-sessions', 'memberships'] as const) {
+        const live = await req.payload.find({
+          collection: 'sessions',
+          where: { user: { equals: id }, status: { in: ACTIVE_STATUSES } },
+          depth: 0,
+          pagination: false,
+          overrideAccess: true,
+          req,
+        })
+        for (const session of live.docs) await stopSession(req.payload, session)
+        for (const collection of ['auth-sessions', 'memberships', 'sessions'] as const) {
           await req.payload.delete({ collection, where: { user: { equals: id } }, overrideAccess: true, req })
         }
       },

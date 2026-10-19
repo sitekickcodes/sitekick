@@ -10,12 +10,14 @@ import { DeviceAuthorizations } from './collections/DeviceAuthorizations'
 import { Invites } from './collections/Invites'
 import { Memberships } from './collections/Memberships'
 import { Organizations } from './collections/Organizations'
+import { Sessions } from './collections/Sessions'
 import { Sites } from './collections/Sites'
 import { Users } from './collections/Users'
 import { authEndpoints } from './endpoints/v1/auth'
 import { deviceEndpoints } from './endpoints/v1/device'
 import { inviteEndpoints } from './endpoints/v1/invites'
 import { meEndpoints } from './endpoints/v1/me'
+import { sessionEndpoints } from './endpoints/v1/sessions'
 import { siteEndpoints } from './endpoints/v1/sites'
 
 const filename = fileURLToPath(import.meta.url)
@@ -36,8 +38,8 @@ export default buildConfig({
     importMap: { baseDir: path.resolve(dirname) },
     meta: { titleSuffix: ' · Sitekick' },
   },
-  collections: [Users, Organizations, Memberships, Invites, Sites, AuthSessions, DeviceAuthorizations],
-  endpoints: [...authEndpoints, ...deviceEndpoints, ...meEndpoints, ...inviteEndpoints, ...siteEndpoints],
+  collections: [Users, Organizations, Memberships, Invites, Sites, Sessions, AuthSessions, DeviceAuthorizations],
+  endpoints: [...authEndpoints, ...deviceEndpoints, ...meEndpoints, ...inviteEndpoints, ...siteEndpoints, ...sessionEndpoints],
   // Clients use REST; no GraphQL surface to secure.
   graphQL: { disable: true },
   secret: process.env.PAYLOAD_SECRET || '',

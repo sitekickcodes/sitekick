@@ -37,6 +37,7 @@
     "@payloadcms/next": "3.90.2",
     "@payloadcms/ui": "3.90.2",
     "@vercel/functions": "^3.10.1",
+    "@vercel/sandbox": "^3.8.0",
     "graphql": "^16.14.0",
     "jose": "^6.2.12",
     "next": "16.3.6",

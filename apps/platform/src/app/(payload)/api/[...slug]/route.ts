@@ -17,3 +17,7 @@ export const DELETE = REST_DELETE(config)
 export const PATCH = REST_PATCH(config)
 export const PUT = REST_PUT(config)
 export const OPTIONS = REST_OPTIONS(config)
+
+// Session setup (clone, install, dev server) runs after the response via
+// waitUntil and can take several minutes.
+export const maxDuration = 800

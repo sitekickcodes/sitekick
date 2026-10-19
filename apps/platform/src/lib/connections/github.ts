@@ -50,6 +50,24 @@ function gh(fetchImpl: FetchLike, path: string, token: string, init: RequestInit
   })
 }
 
+function mintInstallationToken(fetchImpl: FetchLike, jwt: string, installationId: number) {
+  return gh(fetchImpl, `/app/installations/${installationId}/access_tokens`, jwt, { method: 'POST' })
+}
+
+/**
+ * A short-lived (1 hour) token for one repo's installation, for git over
+ * HTTPS as `x-access-token`. Throws if the app isn't installed there.
+ */
+export async function repoAccessToken(config: GitHubAppConfig, fullName: string, fetchImpl: FetchLike = fetch): Promise<string> {
+  const jwt = await appJwt(config)
+  const installRes = await gh(fetchImpl, `/repos/${fullName}/installation`, jwt)
+  if (!installRes.ok) throw new Error(`The Sitekick GitHub App isn't installed on ${fullName} (GitHub ${installRes.status}).`)
+  const installation = (await installRes.json()) as { id: number }
+  const tokenRes = await mintInstallationToken(fetchImpl, jwt, installation.id)
+  if (!tokenRes.ok) throw new Error(`GitHub answered ${tokenRes.status} when creating an installation token.`)
+  return ((await tokenRes.json()) as { token: string }).token
+}
+
 export type RepoCheck =
   | {
       ok: true
@@ -77,9 +95,7 @@ export async function checkRepo(config: GitHubAppConfig, fullName: string, fetch
   if (!installRes.ok) return { ok: false, reason: 'error', message: `GitHub answered ${installRes.status} when looking up the app installation.` }
   const installation = (await installRes.json()) as { id: number }
 
-  const tokenRes = await gh(fetchImpl, `/app/installations/${installation.id}/access_tokens`, jwt, {
-    method: 'POST',
-  })
+  const tokenRes = await mintInstallationToken(fetchImpl, jwt, installation.id)
   if (!tokenRes.ok) return { ok: false, reason: 'error', message: `GitHub answered ${tokenRes.status} when creating an installation token.` }
   const token = (await tokenRes.json()) as { token: string; permissions?: Record<string, string> }
 

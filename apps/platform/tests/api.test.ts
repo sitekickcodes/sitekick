@@ -267,3 +267,37 @@ describe('site connection', () => {
     await payload.delete({ collection: 'sites', id: created.body.doc.id, overrideAccess: true })
   })
 })
+
+describe('editing sessions', () => {
+  test('editors can start a session; without platform config it fails with a clear reason', async () => {
+    const site = (await payload.find({ collection: 'sites', where: { slug: { equals: 'acme-marketing' } }, overrideAccess: true })).docs[0]
+    const client = (await login(CLIENT_EMAIL)).body
+    const started = await api(`/v1/sites/${site!.id}/sessions`, { method: 'POST', token: client.accessToken })
+    expect([200, 201]).toContain(started.status)
+    expect(started.body.previewUrl).toBeNull()
+
+    let state = started.body
+    for (let i = 0; i < 40 && state.status !== 'failed'; i++) {
+      await new Promise((r) => setTimeout(r, 250))
+      state = (await api(`/v1/sessions/${started.body.id}`, { token: client.accessToken })).body
+    }
+    expect(state.status).toBe('failed')
+    expect(state.error).toContain("Can't start a session")
+
+    // Someone else's session is invisible.
+    const staff = (await login(STAFF_EMAIL)).body
+    const email = `viewer-${unique}@example.com`
+    const viewer = await payload.create({ collection: 'users', data: { email, password: PASSWORD, name: 'Viewer', kind: 'client' }, overrideAccess: true })
+    const acme = (await payload.find({ collection: 'organizations', where: { slug: { equals: 'acme' } }, overrideAccess: true })).docs[0]
+    await payload.create({ collection: 'memberships', data: { user: viewer.id, organization: acme!.id, role: 'viewer' }, overrideAccess: true })
+    const viewerTokens = (await login(email)).body
+    expect((await api(`/v1/sessions/${started.body.id}`, { token: viewerTokens.accessToken })).status).toBe(404)
+    // Viewers can't start sessions; staff can read anyone's.
+    expect((await api(`/v1/sites/${site!.id}/sessions`, { method: 'POST', token: viewerTokens.accessToken })).status).toBe(403)
+    expect((await api(`/v1/sessions/${started.body.id}`, { token: staff.accessToken })).status).toBe(200)
+  })
+
+  test('the reaper needs the cron secret', async () => {
+    expect((await api('/v1/cron/sessions')).status).toBe(401)
+  })
+})
