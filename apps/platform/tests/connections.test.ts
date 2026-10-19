@@ -76,6 +76,19 @@ describe('checkSiteConnection', () => {
     expect(calls.filter((c) => c.url.startsWith(VC)).every((c) => c.auth === 'Bearer vc_test' && c.url.includes('teamId=team_test'))).toBe(true)
   })
 
+  test('a project with several sites leaves the production URL blank', async () => {
+    const { fetchImpl } = fakeApis({
+      ...happyRoutes,
+      [`${VC}/v9/projects/prj_acme/domains`]: {
+        status: 200,
+        body: { domains: [{ name: 'acme.com', verified: true }, { name: 'www.acme.com', verified: true, redirect: 'acme.com' }, { name: 'chapter.org', verified: true }] },
+      },
+    })
+    const result = await checkSiteConnection({ githubRepo: 'sitekickcodes/acme', vercelProjectId: 'acme-site' }, deps(fetchImpl))
+    expect(result.status).toBe('ok')
+    expect(result.productionUrl).toBeNull()
+  })
+
   test('app not installed on the repo', async () => {
     const { fetchImpl } = fakeApis({ ...happyRoutes, [`${GH}/repos/sitekickcodes/acme/installation`]: { status: 404 } })
     const result = await checkSiteConnection({ githubRepo: 'sitekickcodes/acme', vercelProjectId: 'acme-site' }, deps(fetchImpl))

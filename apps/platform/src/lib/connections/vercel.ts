@@ -46,13 +46,20 @@ export async function checkProject(config: VercelConfig, idOrName: string, fetch
 
   const linkedRepo = project.link?.type === 'github' && project.link.org && project.link.repo ? `${project.link.org}/${project.link.repo}` : null
 
+  // Only fill the URL when it's unambiguous: one custom domain (and its www
+  // twin). Multi-domain projects (yimby-website serves ~100 chapter domains)
+  // leave it for staff to set.
   let productionUrl: string | null = null
-  const domainsRes = await fetchImpl(`${API}/v9/projects/${encodeURIComponent(project.id)}/domains?${team}&production=true`, { headers })
+  const domainsRes = await fetchImpl(`${API}/v9/projects/${encodeURIComponent(project.id)}/domains?${team}&production=true&limit=50`, { headers })
   if (domainsRes.ok) {
-    const { domains = [] } = (await domainsRes.json()) as DomainsBody
-    const live = domains.filter((d) => d.verified !== false && !d.redirect && !d.gitBranch)
-    const best = live.find((d) => !d.name.endsWith('.vercel.app')) ?? live[0]
-    if (best) productionUrl = `https://${best.name}`
+    const { domains = [], pagination } = (await domainsRes.json()) as DomainsBody & { pagination?: { next?: number | null } }
+    const custom = domains.filter((d) => d.verified !== false && !d.gitBranch && !d.name.endsWith('.vercel.app'))
+    const sites = new Set(custom.map((d) => d.name.replace(/^www\./, '')))
+    if (sites.size === 1 && !pagination?.next) {
+      const serving = custom.filter((d) => !d.redirect)
+      const pick = serving.find((d) => !d.name.startsWith('www.')) ?? serving[0]
+      if (pick) productionUrl = `https://${pick.name}`
+    }
   }
 
   return {
