@@ -8,17 +8,42 @@
 // (`<refresh>\n<access>`). Every authenticated call reads it, builds its
 // header and fetches; nothing secret is kept in the Model.
 //
+// Opening a site starts (or resumes) an editing session on the platform: a
+// sandbox running the site's dev server. The core polls its status while it
+// sets up, then points the preview WebView (webPanes) at its URL, sends a
+// heartbeat while it's open, and stops it on switch/sign-out.
+//
 // API responses are JSON, which the core can't parse: the `api` service
 // (src/services/api.ts) decodes them into the records in shared.ts.
 
 import { Cmd, Sub, asciiBytes, utf8Bytes, type EnvMsg } from "@native-sdk/core";
+import type { WebViewPane } from "@native-sdk/core/events";
 import { applyTextInputEvent, clampedInsertEvent, containsIgnoreCase, type TextEditState, type TextInputEvent } from "@native-sdk/core/text";
-import { apiParseDeviceStart, apiParseSites, apiParseTokens } from "@native-sdk/services";
+import { apiParseDeviceStart, apiParseSession, apiParseSites, apiParseTokens } from "@native-sdk/services";
 
 import { afterNewline, beforeNewline, joined, sameBytes } from "./bytes.ts";
-import type { DeviceStart, Site, SitesResult, TokensResult } from "./shared.ts";
+import type { DeviceStart, SessionInfo, Site, SitesResult, TokensResult } from "./shared.ts";
 
 export type Screen = "starting" | "signedOut" | "awaitingApproval" | "loadingSites" | "pickingSite" | "workspace";
+
+/// What to resume after a token refresh triggered by a 401.
+export type AfterRefresh = "loadSites" | "startSession" | "pollSession" | "heartbeat" | "stopSession";
+
+/// The open site's session, as the platform reports it ("none" before one exists).
+export type SessionState =
+  | "none"
+  | "starting"
+  | "branching"
+  | "booting"
+  | "installing"
+  | "migrating"
+  | "starting_server"
+  | "ready"
+  | "failed"
+  | "stopped";
+
+/// What to do once the current session has been stopped.
+export type AfterStop = "nothing" | "pickSite" | "signOut";
 
 export interface Model {
   readonly screen: Screen;
@@ -43,6 +68,16 @@ export interface Model {
   readonly queryFocus: number;
   readonly queryCompStart: number;
   readonly queryCompEnd: number;
+  // ---- editing session for the open site
+  readonly sessionStatus: SessionState;
+  readonly previewUrl: Uint8Array;
+  readonly sessionError: Uint8Array;
+  readonly sessionStatusPath: Uint8Array;
+  readonly sessionHeartbeatPath: Uint8Array;
+  readonly sessionStopPath: Uint8Array;
+  readonly reloadToken: number;
+  readonly afterRefresh: AfterRefresh;
+  readonly afterStop: AfterStop;
 }
 
 export type Msg =
@@ -78,6 +113,21 @@ export type Msg =
   | { readonly kind: "query_edited"; readonly edit: TextInputEvent }
   | { readonly kind: "open_site"; readonly id: number }
   | { readonly kind: "switch_site" }
+  // editing session
+  | { readonly kind: "start_session" }
+  | { readonly kind: "session_for_start"; readonly session: Uint8Array }
+  | { readonly kind: "session_started"; readonly status: number; readonly body: Uint8Array }
+  | { readonly kind: "session_parsed"; readonly result: SessionInfo }
+  | { readonly kind: "status_tick"; readonly at: number }
+  | { readonly kind: "session_for_status"; readonly session: Uint8Array }
+  | { readonly kind: "status_fetched"; readonly status: number; readonly body: Uint8Array }
+  | { readonly kind: "heartbeat_tick"; readonly at: number }
+  | { readonly kind: "session_for_heartbeat"; readonly session: Uint8Array }
+  | { readonly kind: "heartbeat_sent"; readonly status: number; readonly body: Uint8Array }
+  | { readonly kind: "reload_preview" }
+  | { readonly kind: "session_for_stop"; readonly session: Uint8Array }
+  | { readonly kind: "session_stopped"; readonly status: number; readonly body: Uint8Array }
+  | { readonly kind: "stop_failed"; readonly reason: Uint8Array }
   // sign-out
   | { readonly kind: "sign_out" }
   | { readonly kind: "session_for_logout"; readonly session: Uint8Array }
@@ -99,6 +149,9 @@ const LAST_SITE = "last-site";
 const MAX_QUERY_BYTES = 200;
 const EMPTY = new Uint8Array(0);
 const JSON_HEADERS = { "content-type": "application/json" };
+const STATUS_POLL_MS = 2000;
+const HEARTBEAT_MS = 5 * 60 * 1000;
+const MAX_RELOAD_TOKEN = 1000000000;
 
 export function initialModel(): [Model, Cmd<Msg>] {
   return [
@@ -121,18 +174,44 @@ export function initialModel(): [Model, Cmd<Msg>] {
       queryFocus: 0,
       queryCompStart: -1,
       queryCompEnd: -1,
+      sessionStatus: "none",
+      previewUrl: EMPTY,
+      sessionError: EMPTY,
+      sessionStatusPath: EMPTY,
+      sessionHeartbeatPath: EMPTY,
+      sessionStopPath: EMPTY,
+      reloadToken: 0,
+      afterRefresh: "loadSites",
+      afterStop: "nothing",
     },
     Cmd.store.get(LAST_SITE, { ok: "last_site_loaded", err: "last_site_missing" }),
   ];
 }
 
-function url(model: Model, path: string): Uint8Array {
-  return joined([model.apiBase, asciiBytes(path)]);
+function url(model: Model, path: Uint8Array): Uint8Array {
+  return joined([model.apiBase, path]);
+}
+
+function bearer(session: Uint8Array): Uint8Array {
+  return joined([asciiBytes("Bearer "), afterNewline(session)]);
+}
+
+function withoutSession(model: Model): Model {
+  return {
+    ...model,
+    sessionStatus: "none",
+    previewUrl: EMPTY,
+    sessionError: EMPTY,
+    sessionStatusPath: EMPTY,
+    sessionHeartbeatPath: EMPTY,
+    sessionStopPath: EMPTY,
+    afterStop: "nothing",
+  };
 }
 
 function signedOut(model: Model, notice: Uint8Array): Model {
   return {
-    ...model,
+    ...withoutSession(model),
     screen: "signedOut",
     notice,
     canRetry: false,
@@ -148,11 +227,20 @@ function signedOut(model: Model, notice: Uint8Array): Model {
     queryFocus: 0,
     queryCompStart: -1,
     queryCompEnd: -1,
+    afterRefresh: "loadSites",
   };
 }
 
 function withSiteOpen(model: Model, site: Site): Model {
-  return { ...model, screen: "workspace", currentSiteId: site.id, lastSiteSlug: site.slug, notice: EMPTY };
+  return { ...withoutSession(model), screen: "workspace", currentSiteId: site.id, lastSiteSlug: site.slug, notice: EMPTY, sessionStatus: "starting" };
+}
+
+function hasLiveSession(model: Model): boolean {
+  return model.sessionStopPath.length > 0 && model.sessionStatus !== "failed" && model.sessionStatus !== "stopped" && model.sessionStatus !== "none";
+}
+
+function currentSite(model: Model): Site | undefined {
+  return model.sites.find((s) => s.id === model.currentSiteId);
 }
 
 export function update(model: Model, msg: Msg): [Model, Cmd<Msg>] {
@@ -168,15 +256,15 @@ export function update(model: Model, msg: Msg): [Model, Cmd<Msg>] {
     case "session_missing":
       return [signedOut(model, model.notice), Cmd.none];
     case "retry":
-      return [{ ...model, screen: "starting", notice: EMPTY }, Cmd.credentials.get(SESSION, { ok: "session_for_refresh", err: "session_missing" })];
+      return [{ ...model, screen: "starting", notice: EMPTY, afterRefresh: "loadSites" }, Cmd.credentials.get(SESSION, { ok: "session_for_refresh", err: "session_missing" })];
 
     // ---------------------------------------------------------- refresh
     case "session_for_refresh":
       return [
-        { ...model, screen: model.screen === "starting" ? "starting" : "loadingSites" },
+        model,
         Cmd.fetch(
           {
-            url: url(model, "/api/v1/auth/refresh"),
+            url: url(model, asciiBytes("/api/v1/auth/refresh")),
             method: "POST",
             headers: JSON_HEADERS,
             body: joined([asciiBytes('{"refreshToken":"'), beforeNewline(msg.session), asciiBytes('"}')]),
@@ -200,9 +288,9 @@ export function update(model: Model, msg: Msg): [Model, Cmd<Msg>] {
     // -------------------------------------------------- browser sign-in
     case "sign_in":
       return [
-        { ...model, notice: EMPTY },
+        { ...model, notice: EMPTY, afterRefresh: "loadSites" },
         Cmd.fetch(
-          { url: url(model, "/api/v1/auth/device"), method: "POST", headers: JSON_HEADERS, body: DEVICE_NAME_BODY, timeoutMs: 15000 },
+          { url: url(model, asciiBytes("/api/v1/auth/device")), method: "POST", headers: JSON_HEADERS, body: DEVICE_NAME_BODY, timeoutMs: 15000 },
           { key: "device-start", ok: "device_started", err: "request_failed" },
         ),
       ];
@@ -226,7 +314,7 @@ export function update(model: Model, msg: Msg): [Model, Cmd<Msg>] {
         model,
         Cmd.fetch(
           {
-            url: url(model, "/api/v1/auth/device/token"),
+            url: url(model, asciiBytes("/api/v1/auth/device/token")),
             method: "POST",
             headers: JSON_HEADERS,
             body: joined([asciiBytes('{"deviceCode":"'), msg.code, asciiBytes('"}')]),
@@ -251,7 +339,13 @@ export function update(model: Model, msg: Msg): [Model, Cmd<Msg>] {
     // ------------------------------------------------ tokens -> keychain
     case "tokens_parsed":
       return [
-        { ...model, screen: "loadingSites", userName: msg.result.userName, userEmail: msg.result.userEmail, isStaff: msg.result.isStaff },
+        {
+          ...model,
+          screen: model.screen === "workspace" ? "workspace" : "loadingSites",
+          userName: msg.result.userName,
+          userEmail: msg.result.userEmail,
+          isStaff: msg.result.isStaff,
+        },
         Cmd.credentials.set(SESSION, msg.result.session, { ok: "session_saved", err: "keychain_failed" }),
       ];
     case "session_saved":
@@ -259,6 +353,19 @@ export function update(model: Model, msg: Msg): [Model, Cmd<Msg>] {
       return [model, Cmd.credentials.delete(DEVICE_CODE, { ok: "device_code_cleared", err: "device_code_clear_failed" })];
     case "device_code_cleared":
     case "device_code_clear_failed":
+      // Resume whatever the refresh interrupted.
+      switch (model.afterRefresh) {
+        case "startSession":
+          return [{ ...model, afterRefresh: "loadSites" }, Cmd.credentials.get(SESSION, { ok: "session_for_start", err: "session_missing" })];
+        case "pollSession":
+          return [{ ...model, afterRefresh: "loadSites" }, Cmd.credentials.get(SESSION, { ok: "session_for_status", err: "session_missing" })];
+        case "heartbeat":
+          return [{ ...model, afterRefresh: "loadSites" }, Cmd.credentials.get(SESSION, { ok: "session_for_heartbeat", err: "session_missing" })];
+        case "stopSession":
+          return [{ ...model, afterRefresh: "loadSites" }, Cmd.credentials.get(SESSION, { ok: "session_for_stop", err: "session_missing" })];
+        case "loadSites":
+          return [{ ...model, screen: "loadingSites" }, Cmd.credentials.get(SESSION, { ok: "session_for_sites", err: "session_missing" })];
+      }
     case "load_sites":
       return [{ ...model, screen: "loadingSites" }, Cmd.credentials.get(SESSION, { ok: "session_for_sites", err: "session_missing" })];
 
@@ -267,17 +374,13 @@ export function update(model: Model, msg: Msg): [Model, Cmd<Msg>] {
       return [
         model,
         Cmd.fetch(
-          {
-            url: url(model, "/api/v1/me/sites"),
-            headers: { authorization: joined([asciiBytes("Bearer "), afterNewline(msg.session)]) },
-            timeoutMs: 15000,
-          },
+          { url: url(model, asciiBytes("/api/v1/me/sites")), headers: { authorization: bearer(msg.session) }, timeoutMs: 15000 },
           { key: "sites", ok: "sites_fetched", err: "request_failed" },
         ),
       ];
     case "sites_fetched":
       // An expired access token: refresh, which loads the sites again.
-      if (msg.status === 401) return [model, Cmd.credentials.get(SESSION, { ok: "session_for_refresh", err: "session_missing" })];
+      if (msg.status === 401) return [{ ...model, afterRefresh: "loadSites" }, Cmd.credentials.get(SESSION, { ok: "session_for_refresh", err: "session_missing" })];
       if (msg.status !== 200) return [signedOut(model, utf8Bytes("Couldn’t load your sites. Try again in a moment.")), Cmd.none];
       return [model, apiParseSites({ body: msg.body }, { key: "parse-sites", ok: "sites_parsed", err: "parse_failed" })];
     case "sites_parsed": {
@@ -287,7 +390,7 @@ export function update(model: Model, msg: Msg): [Model, Cmd<Msg>] {
       // last-opened site highlighted.
       const only = sites.length === 1 ? sites[0] : undefined;
       if (only !== undefined) {
-        return [withSiteOpen(loaded, only), Cmd.store.set(LAST_SITE, only.slug, { ok: "saved", err: "ignored" })];
+        return [withSiteOpen(loaded, only), Cmd.store.set(LAST_SITE, only.slug, { ok: "start_session", err: "ignored" })];
       }
       return [{ ...loaded, screen: "pickingSite" }, Cmd.none];
     }
@@ -321,20 +424,128 @@ export function update(model: Model, msg: Msg): [Model, Cmd<Msg>] {
     case "open_site": {
       const site = model.sites.find((s) => s.id === msg.id);
       if (site === undefined) return [model, Cmd.none];
-      return [withSiteOpen(model, site), Cmd.store.set(LAST_SITE, site.slug, { ok: "saved", err: "ignored" })];
+      return [withSiteOpen(model, site), Cmd.store.set(LAST_SITE, site.slug, { ok: "start_session", err: "ignored" })];
     }
     case "switch_site":
-      return [{ ...model, screen: "pickingSite", currentSiteId: -1 }, Cmd.none];
+      if (hasLiveSession(model)) {
+        return [{ ...model, afterStop: "pickSite" }, Cmd.credentials.get(SESSION, { ok: "session_for_stop", err: "session_missing" })];
+      }
+      return [{ ...withoutSession(model), screen: "pickingSite", currentSiteId: -1 }, Cmd.none];
+
+    // -------------------------------------------------- editing session
+    case "start_session":
+      if (model.screen !== "workspace") return [model, Cmd.none];
+      return [
+        { ...withoutSession(model), sessionStatus: "starting" },
+        Cmd.credentials.get(SESSION, { ok: "session_for_start", err: "session_missing" }),
+      ];
+    case "session_for_start": {
+      const site = currentSite(model);
+      if (site === undefined || model.screen !== "workspace") return [model, Cmd.none];
+      return [
+        model,
+        Cmd.fetch(
+          { url: url(model, site.sessionsPath), method: "POST", headers: { authorization: bearer(msg.session) }, timeoutMs: 30000 },
+          { key: "session-start", ok: "session_started", err: "request_failed" },
+        ),
+      ];
+    }
+    case "session_started":
+      if (msg.status === 401) return [{ ...model, afterRefresh: "startSession" }, Cmd.credentials.get(SESSION, { ok: "session_for_refresh", err: "session_missing" })];
+      if (msg.status === 403) {
+        return [{ ...model, sessionStatus: "failed", sessionError: utf8Bytes("You can view this site but not edit it. Ask an owner for editor access.") }, Cmd.none];
+      }
+      if (msg.status !== 200 && msg.status !== 201) {
+        return [{ ...model, sessionStatus: "failed", sessionError: utf8Bytes("Sitekick couldn’t start a session. Try again in a moment.") }, Cmd.none];
+      }
+      return [model, apiParseSession({ body: msg.body }, { key: "parse-session", ok: "session_parsed", err: "parse_failed" })];
+    case "session_parsed":
+      if (model.screen !== "workspace") return [model, Cmd.none];
+      return [
+        {
+          ...model,
+          sessionStatus: msg.result.status,
+          previewUrl: msg.result.previewUrl,
+          sessionError: msg.result.problem,
+          sessionStatusPath: msg.result.statusPath,
+          sessionHeartbeatPath: msg.result.heartbeatPath,
+          sessionStopPath: msg.result.stopPath,
+        },
+        Cmd.none,
+      ];
+    case "status_tick":
+      if (model.screen !== "workspace" || model.sessionStatusPath.length === 0) return [model, Cmd.none];
+      return [model, Cmd.credentials.get(SESSION, { ok: "session_for_status", err: "session_missing" })];
+    case "session_for_status":
+      if (model.sessionStatusPath.length === 0) return [model, Cmd.none];
+      return [
+        model,
+        Cmd.fetch(
+          { url: url(model, model.sessionStatusPath), headers: { authorization: bearer(msg.session) }, timeoutMs: 15000 },
+          // Overlapping polls are rejected on this key and ignored.
+          { key: "session-status", ok: "status_fetched", err: "ignored" },
+        ),
+      ];
+    case "status_fetched":
+      if (msg.status === 401) return [{ ...model, afterRefresh: "pollSession" }, Cmd.credentials.get(SESSION, { ok: "session_for_refresh", err: "session_missing" })];
+      if (msg.status !== 200) return [model, Cmd.none];
+      return [model, apiParseSession({ body: msg.body }, { key: "parse-session", ok: "session_parsed", err: "parse_failed" })];
+    case "heartbeat_tick":
+      if (model.sessionStatus !== "ready") return [model, Cmd.none];
+      return [model, Cmd.credentials.get(SESSION, { ok: "session_for_heartbeat", err: "session_missing" })];
+    case "session_for_heartbeat":
+      if (model.sessionHeartbeatPath.length === 0) return [model, Cmd.none];
+      return [
+        model,
+        Cmd.fetch(
+          { url: url(model, model.sessionHeartbeatPath), method: "POST", headers: { authorization: bearer(msg.session) }, timeoutMs: 30000 },
+          { key: "session-heartbeat", ok: "heartbeat_sent", err: "ignored" },
+        ),
+      ];
+    case "heartbeat_sent":
+      if (msg.status === 401) return [{ ...model, afterRefresh: "heartbeat" }, Cmd.credentials.get(SESSION, { ok: "session_for_refresh", err: "session_missing" })];
+      if (msg.status !== 200) return [model, Cmd.none];
+      // The platform may report the session stopped (idle reaper): show it.
+      return [model, apiParseSession({ body: msg.body }, { key: "parse-session", ok: "session_parsed", err: "parse_failed" })];
+    case "reload_preview":
+      return [{ ...model, reloadToken: model.reloadToken < MAX_RELOAD_TOKEN ? model.reloadToken + 1 : 0 }, Cmd.none];
+    case "session_for_stop":
+      if (model.sessionStopPath.length === 0) return [model, Cmd.none];
+      return [
+        model,
+        Cmd.fetch(
+          { url: url(model, model.sessionStopPath), method: "POST", headers: { authorization: bearer(msg.session) }, timeoutMs: 60000 },
+          { key: "session-stop", ok: "session_stopped", err: "stop_failed" },
+        ),
+      ];
+    case "session_stopped":
+    case "stop_failed":
+      if (msg.kind === "session_stopped" && msg.status === 401) {
+        return [{ ...model, afterRefresh: "stopSession" }, Cmd.credentials.get(SESSION, { ok: "session_for_refresh", err: "session_missing" })];
+      }
+      // Stopped, already gone, or offline (the platform's reaper stops it
+      // later): carry on either way.
+      switch (model.afterStop) {
+        case "pickSite":
+          return [{ ...withoutSession(model), screen: "pickingSite", currentSiteId: -1 }, Cmd.none];
+        case "signOut":
+          return [signedOut(withoutSession(model), utf8Bytes("Signed out.")), Cmd.credentials.get(SESSION, { ok: "session_for_logout", err: "session_missing" })];
+        case "nothing":
+          return [withoutSession(model), Cmd.none];
+      }
 
     // --------------------------------------------------------- sign-out
     case "sign_out":
+      if (hasLiveSession(model)) {
+        return [{ ...model, afterStop: "signOut" }, Cmd.credentials.get(SESSION, { ok: "session_for_stop", err: "session_missing" })];
+      }
       return [signedOut(model, utf8Bytes("Signed out.")), Cmd.credentials.get(SESSION, { ok: "session_for_logout", err: "session_missing" })];
     case "session_for_logout":
       return [
         model,
         Cmd.fetch(
           {
-            url: url(model, "/api/v1/auth/logout"),
+            url: url(model, asciiBytes("/api/v1/auth/logout")),
             method: "POST",
             headers: JSON_HEADERS,
             body: joined([asciiBytes('{"refreshToken":"'), beforeNewline(msg.session), asciiBytes('"}')]),
@@ -348,7 +559,10 @@ export function update(model: Model, msg: Msg): [Model, Cmd<Msg>] {
       // 204 or not (an already-revoked session answers 204 too), the
       // keychain entry goes. Reading status keeps it integer-typed like the
       // other fetch results.
-      return [{ ...model, notice: msg.status === 204 ? model.notice : utf8Bytes("Signed out on this device.") }, Cmd.credentials.delete(SESSION, { ok: "session_deleted", err: "keychain_failed" })];
+      return [
+        { ...model, notice: msg.status === 204 ? model.notice : utf8Bytes("Signed out on this device.") },
+        Cmd.credentials.delete(SESSION, { ok: "session_deleted", err: "keychain_failed" }),
+      ];
     case "logout_failed":
       // Offline: still forget the session here.
       return [model, Cmd.credentials.delete(SESSION, { ok: "session_deleted", err: "keychain_failed" })];
@@ -357,6 +571,9 @@ export function update(model: Model, msg: Msg): [Model, Cmd<Msg>] {
 
     // ---------------------------------------------------------- failures
     case "request_failed":
+      if (model.screen === "workspace") {
+        return [{ ...model, sessionStatus: "failed", sessionError: utf8Bytes("Can’t reach Sitekick. Check your connection and try again.") }, Cmd.none];
+      }
       return [
         {
           ...model,
@@ -367,6 +584,9 @@ export function update(model: Model, msg: Msg): [Model, Cmd<Msg>] {
         Cmd.none,
       ];
     case "parse_failed":
+      if (model.screen === "workspace") {
+        return [{ ...model, sessionStatus: "failed", sessionError: utf8Bytes("Sitekick sent a response the app didn’t understand.") }, Cmd.none];
+      }
       return [signedOut(model, utf8Bytes("Sitekick sent a response the app didn’t understand.")), Cmd.none];
     case "keychain_failed":
       return [signedOut(model, utf8Bytes("Couldn’t use the keychain. Try signing in again.")), Cmd.none];
@@ -378,10 +598,38 @@ export function update(model: Model, msg: Msg): [Model, Cmd<Msg>] {
 
 // ---------------------------------------------------------- subscriptions
 
-/// Poll for approval exactly while the sign-in screen is waiting.
+function provisioning(model: Model): boolean {
+  return (
+    model.sessionStatus === "starting" ||
+    model.sessionStatus === "branching" ||
+    model.sessionStatus === "booting" ||
+    model.sessionStatus === "installing" ||
+    model.sessionStatus === "migrating" ||
+    model.sessionStatus === "starting_server"
+  );
+}
+
+/// Poll for sign-in approval while waiting; poll session status while it
+/// sets up; heartbeat while it's ready.
 export function subscriptions(model: Model): Sub<Msg> {
-  if (model.screen !== "awaitingApproval") return Sub.none;
-  return Sub.timer("device-poll-timer", model.pollMs, "poll_tick");
+  if (model.screen === "awaitingApproval") return Sub.timer("device-poll-timer", model.pollMs, "poll_tick");
+  if (model.screen !== "workspace") return Sub.none;
+  if (provisioning(model) && model.sessionStatusPath.length > 0) return Sub.timer("session-status-timer", STATUS_POLL_MS, "status_tick");
+  if (model.sessionStatus === "ready") return Sub.timer("session-heartbeat-timer", HEARTBEAT_MS, "heartbeat_tick");
+  return Sub.none;
+}
+
+// ------------------------------------------------------------ web pane
+
+/// The preview WebView: pinned to the `preview-pane` panel and showing the
+/// sandbox's dev server once it's ready, otherwise collapsed and blank.
+export function webPanes(model: Model): readonly WebViewPane[] {
+  if (model.screen === "workspace" && model.sessionStatus === "ready" && model.previewUrl.length > 0) {
+    return [{ label: asciiBytes("preview"), anchor: asciiBytes("preview-pane"), x: 0, y: 0, width: 0, height: 0, url: model.previewUrl, reloadToken: model.reloadToken }];
+  }
+  // Parked as a 1-point frame on the platform's home page (the manifest
+  // rejects about:blank and zero-size webviews).
+  return [{ label: asciiBytes("preview"), anchor: null, x: 0, y: 0, width: 1, height: 1, url: model.apiBase, reloadToken: model.reloadToken }];
 }
 
 // ------------------------------------------------------- derived bindings
@@ -434,10 +682,6 @@ export function lastSiteId(model: Model): number {
   return last === undefined ? -1 : last.id;
 }
 
-function currentSite(model: Model): Site | undefined {
-  return model.sites.find((s) => s.id === model.currentSiteId);
-}
-
 export function siteName(model: Model): Uint8Array {
   const site = currentSite(model);
   return site === undefined ? EMPTY : site.name;
@@ -466,6 +710,45 @@ export function emptyHelp(model: Model): Uint8Array {
     : utf8Bytes("You don’t have access to any sites yet. Ask your Sitekick contact to invite you.");
 }
 
+export function previewReady(model: Model): boolean {
+  return model.sessionStatus === "ready";
+}
+export function sessionSettingUp(model: Model): boolean {
+  return provisioning(model);
+}
+export function sessionFailed(model: Model): boolean {
+  return model.sessionStatus === "failed" || model.sessionStatus === "stopped";
+}
+
+export function sessionPhase(model: Model): Uint8Array {
+  switch (model.sessionStatus) {
+    case "starting":
+      return utf8Bytes("Starting your workspace…");
+    case "branching":
+      return utf8Bytes("Copying the site’s database…");
+    case "booting":
+      return utf8Bytes("Starting a sandbox and cloning the site…");
+    case "installing":
+      return utf8Bytes("Installing dependencies… (a few minutes the first time)");
+    case "migrating":
+      return utf8Bytes("Updating the database schema…");
+    case "starting_server":
+      return utf8Bytes("Starting the dev server…");
+    case "ready":
+      return utf8Bytes("Live preview");
+    case "failed":
+      return utf8Bytes("The workspace couldn’t start.");
+    case "stopped":
+      return utf8Bytes("This workspace was stopped after a while without activity.");
+    case "none":
+      return EMPTY;
+  }
+}
+
+export function sessionProblem(model: Model): Uint8Array {
+  return model.sessionError;
+}
+
 // ---------------------------------------------------- host-event channels
 
 /// Launch configuration: SITEKICK_API_URL points the app at another
@@ -476,8 +759,13 @@ export const envMsgs: readonly EnvMsg<Msg>[] = [{ env: "SITEKICK_API_URL", msg: 
 export const viewUnbound = [
   "api_base_set", "last_site_loaded", "last_site_missing", "session_missing", "session_for_refresh", "refreshed",
   "device_started", "device_parsed", "device_code_saved", "poll_tick", "device_code_loaded", "polled",
-  "tokens_parsed", "session_saved", "device_code_cleared", "device_code_clear_failed", "session_for_sites", "sites_fetched", "sites_parsed", "session_for_logout",
-  "logged_out", "logout_failed", "session_deleted", "saved", "request_failed", "parse_failed", "keychain_failed", "ignored",
+  "tokens_parsed", "session_saved", "device_code_cleared", "device_code_clear_failed", "session_for_sites", "sites_fetched",
+  "sites_parsed", "session_for_start", "session_started", "session_parsed", "status_tick", "session_for_status",
+  "status_fetched", "heartbeat_tick", "session_for_heartbeat", "heartbeat_sent", "session_for_stop", "session_stopped",
+  "stop_failed", "session_for_logout", "logged_out", "logout_failed", "session_deleted", "saved", "request_failed",
+  "parse_failed", "keychain_failed", "ignored", "load_sites",
   "screen", "canRetry", "apiBase", "verificationUri", "pollMs", "isStaff", "currentSiteId", "lastSiteSlug",
   "queryAnchor", "queryFocus", "queryCompStart", "queryCompEnd", "userName",
+  "sessionStatus", "previewUrl", "sessionError", "sessionStatusPath", "sessionHeartbeatPath", "sessionStopPath",
+  "reloadToken", "afterRefresh", "afterStop",
 ] as const;

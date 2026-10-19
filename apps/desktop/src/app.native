@@ -106,9 +106,31 @@
         <button variant="ghost" size="sm" on-press="sign_out">Sign out</button>
       </column>
       <separator />
-      <column grow="1" main="center" cross="center" gap="8" padding="24">
-        <text size="heading">{siteName}</text>
-        <text foreground="text_muted">The live preview and agent chat arrive in M3 and M4.</text>
+      <column grow="1">
+        <row gap="8" padding="10" cross="center">
+          <text grow="1" size="sm" foreground="text_muted">{sessionPhase}</text>
+          <if test="{previewReady}">
+            <button variant="ghost" size="sm" on-press="reload_preview">Reload</button>
+          </if>
+        </row>
+        <separator />
+        <if test="{previewReady}">
+          <!-- The preview WebView (app.json "preview") is pinned here by webPanes() in core.ts. -->
+          <panel grow="1" label="preview-pane"></panel>
+        </if>
+        <if test="{sessionSettingUp}">
+          <column grow="1" main="center" cross="center" gap="12" padding="24">
+            <spinner />
+            <text foreground="text_muted">{sessionPhase}</text>
+          </column>
+        </if>
+        <if test="{sessionFailed}">
+          <column grow="1" main="center" cross="center" gap="12" padding="24">
+            <text size="lg">{sessionPhase}</text>
+            <text size="sm" wrap="true" foreground="text_muted">{sessionProblem}</text>
+            <button variant="primary" on-press="start_session">Try again</button>
+          </column>
+        </if>
       </column>
     </row>
   </if>

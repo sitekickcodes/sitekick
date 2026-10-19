@@ -25,7 +25,34 @@
 {"kind":"sites_fetched","status":200,"body":{"$bytes":"{\"sites\":[{\"id\":2,\"name\":\"Acme careers\",\"slug\":\"acme-careers\",\"productionUrl\":\"https://careers.acme.example.com\",\"organization\":{\"id\":2,\"name\":\"Acme Co\",\"slug\":\"acme\",\"kind\":\"client\"},\"role\":\"editor\"},{\"id\":1,\"name\":\"Acme marketing site\",\"slug\":\"acme-marketing\",\"productionUrl\":\"https://acme.example.com\",\"organization\":{\"id\":2,\"name\":\"Acme Co\",\"slug\":\"acme\",\"kind\":\"client\"},\"role\":\"editor\"}]}"}}
 {"settle": true}
 
-# Open one; it's remembered as the last site.
+# Open one: it's remembered as the last site and its editing session starts.
+{"kind":"open_site","id":1}
+{"settle": true}
+{"kind":"session_started","status":201,"body":{"$bytes":"{\"id\":7,\"siteId\":1,\"status\":\"starting\",\"previewUrl\":null,\"gitBranch\":\"sitekick/session-7\",\"error\":null}"}}
+{"settle": true}
+
+# Status polls every 2s while it sets up; the preview opens once ready.
+{"advance": 2000}
+{"settle": true}
+{"kind":"status_fetched","status":200,"body":{"$bytes":"{\"id\":7,\"siteId\":1,\"status\":\"installing\",\"previewUrl\":null,\"gitBranch\":\"sitekick/session-7\",\"error\":null}"}}
+{"settle": true}
+{"advance": 2000}
+{"settle": true}
+{"kind":"status_fetched","status":200,"body":{"$bytes":"{\"id\":7,\"siteId\":1,\"status\":\"ready\",\"previewUrl\":\"https://sb-test.vercel.run\",\"gitBranch\":\"sitekick/session-7\",\"error\":null}"}}
+{"settle": true}
+{"kind":"reload_preview"}
+
+# Heartbeat after five minutes keeps the sandbox alive.
+{"advance": 300000}
+{"settle": true}
+{"kind":"heartbeat_sent","status":200,"body":{"$bytes":"{\"id\":7,\"siteId\":1,\"status\":\"ready\",\"previewUrl\":\"https://sb-test.vercel.run\",\"gitBranch\":\"sitekick/session-7\",\"error\":null}"}}
+{"settle": true}
+
+# Switching sites stops the session first.
+{"kind":"switch_site"}
+{"settle": true}
+{"kind":"session_stopped","status":200,"body":{"$bytes":"{\"id\":7,\"siteId\":1,\"status\":\"stopped\",\"previewUrl\":null,\"gitBranch\":\"sitekick/session-7\",\"error\":null}"}}
+{"settle": true}
 {"kind":"open_site","id":1}
 {"settle": true}
 

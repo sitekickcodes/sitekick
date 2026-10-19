@@ -34,8 +34,31 @@ export interface Site {
   readonly orgName: Uint8Array;
   readonly productionUrl: Uint8Array;
   readonly role: Uint8Array;
+  /** `/api/v1/sites/<id>/sessions`, prebuilt so the core never formats numbers into URLs. */
+  readonly sessionsPath: Uint8Array;
 }
 
 export type SitesResult = {
   readonly sites: readonly Site[];
+};
+
+/** Mirrors the platform's session statuses. */
+export type SessionStatus =
+  | "starting"
+  | "branching"
+  | "booting"
+  | "installing"
+  | "migrating"
+  | "starting_server"
+  | "ready"
+  | "failed"
+  | "stopped";
+
+export type SessionInfo = {
+  readonly status: SessionStatus;
+  readonly previewUrl: Uint8Array;
+  readonly problem: Uint8Array;
+  readonly statusPath: Uint8Array;
+  readonly heartbeatPath: Uint8Array;
+  readonly stopPath: Uint8Array;
 };

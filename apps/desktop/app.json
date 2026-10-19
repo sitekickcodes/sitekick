@@ -21,7 +21,8 @@
         "native_views",
         "gpu_surfaces",
         "credentials",
-        "store"
+        "store",
+        "webview"
     ],
     "shell": {
         "windows": [
@@ -43,6 +44,17 @@
                         "gpu_alpha_mode": "opaque",
                         "gpu_color_space": "srgb",
                         "gpu_vsync": true
+                    },
+                    {
+                        "label": "preview",
+                        "kind": "webview",
+                        "parent": "main-canvas",
+                        "url": "https://sitekick-platform.vercel.app/",
+                        "x": 0,
+                        "y": 0,
+                        "width": 1,
+                        "height": 1,
+                        "layer": 20
                     }
                 ]
             }
@@ -51,8 +63,7 @@
     "security": {
         "navigation": {
             "allowed_origins": [
-                "zero://app",
-                "zero://inline"
+                "*"
             ],
             "external_links": {
                 "action": "open_system_browser",

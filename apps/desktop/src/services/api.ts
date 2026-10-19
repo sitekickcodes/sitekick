@@ -1,6 +1,6 @@
 // Decodes platform /api/v1 responses into typed records. The core can't use
 // JSON, so it fetches with Cmd.fetch and hands the body bytes here.
-import type { DeviceStart, ParseRequest, Site, SitesResult, TokensResult } from "../shared.ts";
+import type { DeviceStart, ParseRequest, SessionInfo, SessionStatus, Site, SitesResult, TokensResult } from "../shared.ts";
 
 const encoder = new TextEncoder();
 
@@ -69,7 +69,30 @@ export function parseSites(request: ParseRequest): SitesResult {
       orgName: encoder.encode(typeof orgName === "string" ? orgName : ""),
       productionUrl: encoder.encode(typeof site["productionUrl"] === "string" ? site["productionUrl"] : ""),
       role: encoder.encode(typeof site["role"] === "string" ? site["role"] : ""),
+      sessionsPath: encoder.encode(`/api/v1/sites/${id}/sessions`),
     });
   }
   return { sites };
+}
+
+const STATUSES: readonly SessionStatus[] = ["starting", "branching", "booting", "installing", "migrating", "starting_server", "ready", "failed", "stopped"];
+
+/** POST /sites/:id/sessions, GET /sessions/:id, heartbeat and stop bodies. */
+export function parseSession(request: ParseRequest): SessionInfo {
+  const body = decodeObject(request.body);
+  const id = body["id"];
+  const status = body["status"];
+  if (typeof id !== "number") throw { kind: "bad_shape", message: "missing id in the session response" };
+  const known = STATUSES.find((s) => s === status);
+  if (known === undefined) throw { kind: "bad_shape", message: "unknown session status" };
+  const previewUrl = body["previewUrl"];
+  const error = body["error"];
+  return {
+    status: known,
+    previewUrl: encoder.encode(typeof previewUrl === "string" ? previewUrl : ""),
+    problem: encoder.encode(typeof error === "string" ? error : ""),
+    statusPath: encoder.encode(`/api/v1/sessions/${id}`),
+    heartbeatPath: encoder.encode(`/api/v1/sessions/${id}/heartbeat`),
+    stopPath: encoder.encode(`/api/v1/sessions/${id}/stop`),
+  };
 }
