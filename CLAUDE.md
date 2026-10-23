@@ -2,14 +2,14 @@
 
 Sitekick's own product (not client work): an agentic workspace for editing client sites' code alongside AI agents, modelled on Source by Webflow. A monorepo:
 
-- `apps/platform`: Next.js 16 + Payload 3 + Postgres. Accounts, organizations, sites and the `/api/v1` API.
+- `apps/platform`: Next.js 16 + Payload 4 (beta) + Postgres. Accounts, organizations, sites and the `/api/v1` API.
 - `apps/desktop`: the desktop client, built on [Native SDK](https://native-sdk.dev) (Vercel Labs, pre-1.0).
 
 Architecture, domain model and milestones are in docs/architecture.md. Setup is in each app's README.
 
 ## Shared
 
-- **Node 24** (`.nvmrc`). Use **Bun** for all JS tooling, installs and scripts, never npm, yarn or pnpm. There's no root workspace: run commands inside each app.
+- **Node 24.15+** (`.nvmrc`; Payload 4 requires it). Use **Bun** for all JS tooling, installs and scripts, never npm, yarn or pnpm. There's no root workspace: run commands inside each app.
 - TypeScript is strict in both apps. Avoid `any` and non-null assertions outside tests.
 - Clients (desktop, later mobile) talk to the platform only through `/api/v1`, never Payload's auth routes. That keeps a later move to Better Auth or Clerk cheap (docs/architecture.md, "Auth guardrails").
 
@@ -24,7 +24,11 @@ Architecture, domain model and milestones are in docs/architecture.md. Setup is 
 - Production is https://sitekick-platform.vercel.app on Neon (apps/platform/README.md, "Production"). Deploy with `vercel deploy --prod --scope sitekick` from `apps/platform`, and migrations run in the build.
 - **Never run `vercel env pull` or `neon env pull` in `apps/platform`**: Vercel's Development environment points at the production database. Local work uses `bun run db:local`.
 - **Never send writes to production to test something**, such as creating users or calling `first-register`. Use read-only checks, and run the test suite against `db:local` only.
-- Payload is pinned to yimby-website's version (3.90.2). Upgrades land in yimby first as the test bed, then here, so don't upgrade Payload on its own.
+- Payload is pinned to yimby-website's version (4.0.0-beta.3, with Next 16.4.2 and TypeScript 6.0.3). Upgrades land in yimby first as the test bed, then here, so don't upgrade Payload on its own.
+- Payload 4 changes we rely on:
+  - Local API calls respect access control unless they pass `overrideAccess: true`. Pass it explicitly on every trusted server-side call (including `login`), as the code already does.
+  - Collections get versions and authorship by default. `src/plugins/preserveV3Defaults.ts` turns both off; opt in on a collection by setting `versions` or `authorship` on it.
+  - `defaultDepth` is set to 2 in `payload.config.ts` (v4's default is 1).
 
 ## Desktop (`apps/desktop`)
 

@@ -14,7 +14,7 @@ A platform where Sitekick staff and our clients' marketing teams edit client web
 | Where editing runs | Cloud sandboxes: one Vercel Sandbox per editing session, holding the checked-out repo, a dev server and the agent. Clients install nothing. | Decided |
 | What a site is (v1) | A GitHub repo plus a Vercel project, built on our Next.js + Payload stack. Changes ship as branches and PRs. | Decided |
 | Desktop client | Native SDK (this repo) | Decided |
-| Platform backend | Next.js 16 + Payload 3 on Vercel (pinned to yimby-website's version; Payload upgrades land in yimby first, then here), with Payload's own auth for now. We may move to Better Auth or Clerk later if clients need SSO, social login or MFA. | Decided |
+| Platform backend | Next.js 16 + Payload 4 on Vercel (pinned to yimby-website's version, 4.0.0-beta.3 since October 2026; Payload upgrades land in yimby first, then here), with Payload's own auth for now. We may move to Better Auth or Clerk later if clients need SSO, social login or MFA. | Decided |
 
 ## Platform backend: Payload or Clerk?
 
@@ -64,7 +64,7 @@ flowchart LR
     M[Mobile app<br/>later]
   end
   subgraph Platform["Platform (Vercel)"]
-    P[Next.js 16 + Payload 3<br/>REST + custom endpoints + admin]
+    P[Next.js 16 + Payload 4<br/>REST + custom endpoints + admin]
     DB[(Postgres)]
     J[Payload jobs<br/>session lifecycle]
   end
@@ -157,7 +157,7 @@ Make this repo a monorepo. Each feature then lands in one PR across client and p
 
 ```
 apps/desktop/    Native SDK app (what's at the root today)
-apps/platform/   Next.js 16 + Payload 3 (Bun, Vercel)
+apps/platform/   Next.js 16 + Payload 4 (Bun, Vercel)
 docs/
 ```
 
