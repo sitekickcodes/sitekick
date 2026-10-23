@@ -73,6 +73,7 @@ export interface Config {
     invites: Invite;
     sites: Site;
     sessions: Session;
+    messages: Message;
     'auth-sessions': AuthSession;
     'device-authorizations': DeviceAuthorization;
     'payload-kv': PayloadKv;
@@ -89,6 +90,7 @@ export interface Config {
     invites: InvitesSelect<false> | InvitesSelect<true>;
     sites: SitesSelect<false> | SitesSelect<true>;
     sessions: SessionsSelect<false> | SessionsSelect<true>;
+    messages: MessagesSelect<false> | MessagesSelect<true>;
     'auth-sessions': AuthSessionsSelect<false> | AuthSessionsSelect<true>;
     'device-authorizations': DeviceAuthorizationsSelect<false> | DeviceAuthorizationsSelect<true>;
     'payload-kv': PayloadKvSelect<false> | PayloadKvSelect<true>;
@@ -301,6 +303,16 @@ export interface Session {
     | 'failed'
     | 'stopped';
   previewUrl?: string | null;
+  agentStatus?: ('idle' | 'working') | null;
+  /**
+   * Claude Code session resumed on each turn.
+   */
+  agentSessionId?: string | null;
+  turns?: number | null;
+  /**
+   * Model spend reported by the agent, summed over turns.
+   */
+  agentCostUsd?: number | null;
   gitBranch?: string | null;
   sandboxName?: string | null;
   neonProjectId?: string | null;
@@ -318,6 +330,19 @@ export interface Session {
   lastActiveAt?: string | null;
   readyAt?: string | null;
   endedAt?: string | null;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "messages".
+ */
+export interface Message {
+  id: number;
+  session: number | Session;
+  role: 'user' | 'assistant' | 'tool' | 'notice';
+  text: string;
+  turn: number;
   updatedAt: string;
   createdAt: string;
 }
@@ -406,6 +431,10 @@ export interface PayloadLockedDocument {
     | ({
         relationTo: 'sessions';
         value: number | Session;
+      } | null)
+    | ({
+        relationTo: 'messages';
+        value: number | Message;
       } | null)
     | ({
         relationTo: 'auth-sessions';
@@ -597,6 +626,10 @@ export interface SessionsSelect<T extends boolean = true> {
   user?: T;
   status?: T;
   previewUrl?: T;
+  agentStatus?: T;
+  agentSessionId?: T;
+  turns?: T;
+  agentCostUsd?: T;
   gitBranch?: T;
   sandboxName?: T;
   neonProjectId?: T;
@@ -608,6 +641,18 @@ export interface SessionsSelect<T extends boolean = true> {
   lastActiveAt?: T;
   readyAt?: T;
   endedAt?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "messages_select".
+ */
+export interface MessagesSelect<T extends boolean = true> {
+  session?: T;
+  role?: T;
+  text?: T;
+  turn?: T;
   updatedAt?: T;
   createdAt?: T;
 }
@@ -731,6 +776,7 @@ export interface CollectionQueryWidget {
       | 'invites'
       | 'sites'
       | 'sessions'
+      | 'messages'
       | 'auth-sessions'
       | 'device-authorizations';
     where?:
@@ -762,6 +808,7 @@ export interface ActivityWidget {
           | 'invites'
           | 'sites'
           | 'sessions'
+          | 'messages'
           | 'auth-sessions'
           | 'device-authorizations'
         )[]

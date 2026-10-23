@@ -6,6 +6,7 @@ import type { Payload } from 'payload'
 import { ACTIVE_STATUSES } from '../../collections/Sessions'
 import type { Session, Site } from '../../payload-types'
 import { githubAppConfig, repoAccessToken } from '../connections/github'
+import { agentNetworkPolicy, AGENT_INSTALL } from './agent-env'
 import { createSessionBranch, deleteSessionBranch, neonApiKey } from './neon'
 
 /**
@@ -25,8 +26,8 @@ const READY_TIMEOUT_MS = 8 * 60_000
 export const IDLE_STOP_MS = 30 * 60_000
 export const STUCK_PHASE_MS = 20 * 60_000
 const LOG_TAIL = 6000
-const SANDBOX_HOME = '/vercel/sandbox'
-const REPO_DIR = '/vercel/sandbox/site'
+export const SANDBOX_HOME = '/vercel/sandbox'
+export const REPO_DIR = '/vercel/sandbox/site'
 
 type Status = Session['status']
 
@@ -53,10 +54,10 @@ async function setPhase(payload: Payload, session: Session, status: Status, extr
 }
 
 /** Runs a shell line in the repo with bun on PATH; returns its output, throws on a non-zero exit. */
-async function sh(sandbox: Sandbox, line: string, env: Record<string, string>): Promise<string> {
+export async function sh(sandbox: Sandbox, line: string, env: Record<string, string>): Promise<string> {
   const result = await sandbox.runCommand({
     cmd: 'bash',
-    args: ['-lc', `export PATH="$HOME/.bun/bin:$PATH"; ${line}`],
+    args: ['-lc', `export PATH="$HOME/.bun/bin:$HOME/.local/bin:$PATH"; ${line}`],
     cwd: REPO_DIR,
     env,
   })
@@ -140,6 +141,9 @@ export async function provisionSession(payload: Payload, sessionId: number): Pro
       region: REGION,
       persistent: false,
       tags: { sitekick: 'session', session: String(session.id) },
+      // Everything allowed; the model credential is added by the firewall on
+      // requests to AI Gateway, so it never enters the VM.
+      networkPolicy: await agentNetworkPolicy(),
     })
     // Without a source the working root doesn't exist yet: create it as root
     // and hand it to the sandbox's default (non-root) user.
@@ -199,6 +203,9 @@ export async function provisionSession(payload: Payload, sessionId: number): Pro
       (usesBun ? 'bun install --frozen-lockfile' : lockfiles.includes('pnpm-lock.yaml') ? 'npx pnpm install --frozen-lockfile' : 'npm ci')
     const installOut = await sh(sandbox, install, env)
     session = await update(payload, session.id, { log: tail(session.log, installOut.slice(-1500)) })
+    // The editing agent (Claude Code) and the identity for its checkpoints.
+    await sh(sandbox, AGENT_INSTALL, env)
+    await sh(sandbox, 'git config user.name "Sitekick Agent" && git config user.email "agent@sitekick.co"', env)
 
     // 4. Migrations on the session's branch.
     if (config.migrateCommand) {
@@ -212,7 +219,7 @@ export async function provisionSession(payload: Payload, sessionId: number): Pro
     const dev = config.devCommand || 'npx next dev --hostname 0.0.0.0 --port 3000'
     await sandbox.runCommand({
       cmd: 'bash',
-      args: ['-lc', `export PATH="$HOME/.bun/bin:$PATH"; ${dev} > /tmp/dev.log 2>&1`],
+      args: ['-lc', `export PATH="$HOME/.bun/bin:$HOME/.local/bin:$PATH"; ${dev} > /tmp/dev.log 2>&1`],
       cwd: REPO_DIR,
       env,
       detached: true,

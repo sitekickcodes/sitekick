@@ -301,3 +301,25 @@ describe('editing sessions', () => {
     expect((await api('/v1/cron/sessions')).status).toBe(401)
   })
 })
+
+describe('agent chat', () => {
+  test('chat endpoints refuse until the workspace is ready, and stay private', async () => {
+    const site = (await payload.find({ collection: 'sites', where: { slug: { equals: 'acme-marketing' } }, overrideAccess: true })).docs[0]
+    const client = (await login(CLIENT_EMAIL)).body
+    const started = await api(`/v1/sites/${site!.id}/sessions`, { method: 'POST', token: client.accessToken })
+    const id = started.body.id
+    expect(started.body.agentStatus).toBe('idle')
+
+    const send = await api(`/v1/sessions/${id}/messages`, { method: 'POST', token: client.accessToken, body: { text: 'Make the header blue' } })
+    expect([409]).toContain(send.status)
+    const listed = await api(`/v1/sessions/${id}/messages`, { token: client.accessToken })
+    expect(listed.status).toBe(200)
+    expect(listed.body.messages).toEqual([])
+    expect((await api(`/v1/sessions/${id}/undo`, { method: 'POST', token: client.accessToken })).status).toBe(409)
+
+    const email = `outsider-${unique}@example.com`
+    await payload.create({ collection: 'users', data: { email, password: PASSWORD, name: 'Outsider', kind: 'client' }, overrideAccess: true })
+    const outsider = (await login(email)).body
+    expect((await api(`/v1/sessions/${id}/messages`, { token: outsider.accessToken })).status).toBe(404)
+  })
+})

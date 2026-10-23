@@ -10,6 +10,7 @@ import { DeviceAuthorizations } from './collections/DeviceAuthorizations'
 import { Invites } from './collections/Invites'
 import { Memberships } from './collections/Memberships'
 import { Organizations } from './collections/Organizations'
+import { Messages } from './collections/Messages'
 import { Sessions } from './collections/Sessions'
 import { Sites } from './collections/Sites'
 import { Users } from './collections/Users'
@@ -41,7 +42,7 @@ export default buildConfig({
   },
   // Payload 4 lowered the default to 1; keep v3's population depth.
   defaultDepth: 2,
-  collections: [Users, Organizations, Memberships, Invites, Sites, Sessions, AuthSessions, DeviceAuthorizations],
+  collections: [Users, Organizations, Memberships, Invites, Sites, Sessions, Messages, AuthSessions, DeviceAuthorizations],
   endpoints: [...authEndpoints, ...deviceEndpoints, ...meEndpoints, ...inviteEndpoints, ...siteEndpoints, ...sessionEndpoints],
   // Clients use REST; no GraphQL surface to secure.
   graphQL: { disable: true },

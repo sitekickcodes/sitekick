@@ -17,6 +17,14 @@ export const Sessions: CollectionConfig = {
     defaultColumns: ['site', 'user', 'status', 'previewUrl', 'lastActiveAt'],
     group: 'Sites',
   },
+  hooks: {
+    // messages.session is required: remove a session's chat with it.
+    beforeDelete: [
+      async ({ id, req }) => {
+        await req.payload.delete({ collection: 'messages', where: { session: { equals: id } }, overrideAccess: true, req })
+      },
+    ],
+  },
   access: {
     read: ({ req: { user } }) => {
       if (!user) return false
@@ -49,6 +57,18 @@ export const Sessions: CollectionConfig = {
       ],
     },
     { name: 'previewUrl', type: 'text' },
+    {
+      name: 'agentStatus',
+      type: 'select',
+      defaultValue: 'idle',
+      options: [
+        { label: 'Idle', value: 'idle' },
+        { label: 'Working', value: 'working' },
+      ],
+    },
+    { name: 'agentSessionId', type: 'text', admin: { readOnly: true, description: 'Claude Code session resumed on each turn.' } },
+    { name: 'turns', type: 'number', defaultValue: 0 },
+    { name: 'agentCostUsd', type: 'number', defaultValue: 0, admin: { description: 'Model spend reported by the agent, summed over turns.' } },
     { name: 'gitBranch', type: 'text' },
     { name: 'sandboxName', type: 'text', admin: { readOnly: true } },
     { name: 'neonProjectId', type: 'text', admin: { readOnly: true } },

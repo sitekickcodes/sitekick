@@ -2,9 +2,10 @@ import { waitUntil } from '@vercel/functions'
 import type { Endpoint, PayloadRequest } from 'payload'
 
 import { isStaff } from '../../access'
+import { runAgentTurn, undoLastCheckpoint } from '../../lib/sessions/agent'
 import { findOrCreateSession, heartbeat, isActive, provisionSession, reapSessions, stopSession } from '../../lib/sessions/orchestrate'
 import type { Session } from '../../payload-types'
-import { error, json } from './http'
+import { error, json, readJson, str } from './http'
 
 function summary(session: Session) {
   return {
@@ -14,6 +15,7 @@ function summary(session: Session) {
     // The URL only goes out once something is listening there.
     previewUrl: session.status === 'ready' ? (session.previewUrl ?? null) : null,
     gitBranch: session.gitBranch ?? null,
+    agentStatus: session.agentStatus ?? 'idle',
     error: session.status === 'failed' ? (session.error ?? 'Setup failed.') : null,
   }
 }
@@ -95,6 +97,76 @@ const stop: Endpoint = {
   },
 }
 
+const MAX_PROMPT_CHARS = 8000
+
+/** POST /api/v1/sessions/:id/messages { text }: sends the agent a request. */
+const send: Endpoint = {
+  path: '/v1/sessions/:id/messages',
+  method: 'post',
+  handler: async (req) => {
+    const session = await ownSession(req)
+    if (session instanceof Response) return session
+    if (session.status !== 'ready') return error(409, 'not_ready', 'The workspace is still starting.')
+    if (session.agentStatus === 'working') return error(409, 'busy', 'The agent is still working on your last request.')
+    const text = str((await readJson(req))['text'])?.trim()
+    if (!text) return error(400, 'empty')
+    if (text.length > MAX_PROMPT_CHARS) return error(400, 'too_long')
+
+    await req.payload.create({
+      collection: 'messages',
+      data: { session: session.id, role: 'user', text, turn: session.turns ?? 0 },
+      overrideAccess: true,
+    })
+    const working = await req.payload.update({
+      collection: 'sessions',
+      id: session.id,
+      data: { agentStatus: 'working', lastActiveAt: new Date().toISOString() },
+      depth: 0,
+      overrideAccess: true,
+    })
+    // A turn can take minutes; it streams into `messages` after the response.
+    waitUntil(runAgentTurn(req.payload, session.id, text))
+    return json(summary(working), 202)
+  },
+}
+
+/** GET /api/v1/sessions/:id/messages?after=<id>: the chat, oldest first. */
+const list: Endpoint = {
+  path: '/v1/sessions/:id/messages',
+  method: 'get',
+  handler: async (req) => {
+    const session = await ownSession(req)
+    if (session instanceof Response) return session
+    const after = Number(req.searchParams.get('after') ?? '0')
+    const { docs } = await req.payload.find({
+      collection: 'messages',
+      where: { session: { equals: session.id }, ...(after > 0 ? { id: { greater_than: after } } : {}) },
+      sort: 'id',
+      limit: 200,
+      depth: 0,
+      overrideAccess: true,
+    })
+    return json({
+      session: summary(session),
+      messages: docs.map((m) => ({ id: m.id, role: m.role, text: m.text, turn: m.turn })),
+    })
+  },
+}
+
+/** POST /api/v1/sessions/:id/undo: reverts the agent's last checkpoint. */
+const undo: Endpoint = {
+  path: '/v1/sessions/:id/undo',
+  method: 'post',
+  handler: async (req) => {
+    const session = await ownSession(req)
+    if (session instanceof Response) return session
+    if (session.status !== 'ready') return error(409, 'not_ready')
+    if (session.agentStatus === 'working') return error(409, 'busy', 'Wait for the agent to finish first.')
+    const undone = await undoLastCheckpoint(req.payload, session)
+    return undone === null ? error(409, 'nothing_to_undo', 'There are no agent changes to undo.') : json({ undone })
+  },
+}
+
 /** GET /api/v1/cron/sessions: Vercel Cron, with `Authorization: Bearer $CRON_SECRET`. */
 const reap: Endpoint = {
   path: '/v1/cron/sessions',
@@ -106,4 +178,4 @@ const reap: Endpoint = {
   },
 }
 
-export const sessionEndpoints: Endpoint[] = [start, read, beat, stop, reap]
+export const sessionEndpoints: Endpoint[] = [start, read, beat, stop, send, list, undo, reap]
