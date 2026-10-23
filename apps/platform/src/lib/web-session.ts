@@ -24,6 +24,7 @@ export async function signInWithPassword(email: string, password: string): Promi
       collection: 'users',
       data: { email: email.trim().toLowerCase(), password },
       depth: 0,
+      overrideAccess: true,
     })
     if (!token) return 'invalid'
     const cookie = generatePayloadCookie({

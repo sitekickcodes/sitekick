@@ -19,6 +19,7 @@ import { inviteEndpoints } from './endpoints/v1/invites'
 import { meEndpoints } from './endpoints/v1/me'
 import { sessionEndpoints } from './endpoints/v1/sessions'
 import { siteEndpoints } from './endpoints/v1/sites'
+import { preserveV3Defaults } from './plugins/preserveV3Defaults'
 
 const filename = fileURLToPath(import.meta.url)
 const dirname = path.dirname(filename)
@@ -38,6 +39,8 @@ export default buildConfig({
     importMap: { baseDir: path.resolve(dirname) },
     meta: { titleSuffix: ' · Sitekick' },
   },
+  // Payload 4 lowered the default to 1; keep v3's population depth.
+  defaultDepth: 2,
   collections: [Users, Organizations, Memberships, Invites, Sites, Sessions, AuthSessions, DeviceAuthorizations],
   endpoints: [...authEndpoints, ...deviceEndpoints, ...meEndpoints, ...inviteEndpoints, ...siteEndpoints, ...sessionEndpoints],
   // Clients use REST; no GraphQL surface to secure.
@@ -53,6 +56,7 @@ export default buildConfig({
     // Migrations only, no dev auto-push (same workflow as yimby-website).
     push: false,
   }),
+  plugins: [preserveV3Defaults],
   // On Vercel, close idle pg clients before the instance suspends.
   onInit: async (payload) => {
     if (!process.env.VERCEL) return

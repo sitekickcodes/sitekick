@@ -4,14 +4,14 @@ Sitekick's agentic workspace: Sitekick staff and our clients' marketing teams ed
 
 | App | What it is | Stack |
 | --- | --- | --- |
-| [`apps/platform`](apps/platform) | Accounts, organizations, sites and the `/api/v1` API every client uses, plus the staff admin | Next.js 16 + Payload 3 + Postgres, on Vercel |
+| [`apps/platform`](apps/platform) | Accounts, organizations, sites and the `/api/v1` API every client uses, plus the staff admin | Next.js 16 + Payload 4 (beta) + Postgres, on Vercel |
 | [`apps/desktop`](apps/desktop) | The desktop client | [Native SDK](https://native-sdk.dev) (TypeScript core + Native markup) |
 
 Architecture, the domain model and milestones are in [docs/architecture.md](docs/architecture.md).
 
 ## Requirements
 
-- Node 24 (`.nvmrc`) and Bun
+- Node 24.15+ (`.nvmrc`) and Bun
 - For the desktop app: the `native` CLI (see [apps/desktop/README.md](apps/desktop/README.md))
 
 ## Quick start (platform)

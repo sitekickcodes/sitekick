@@ -50,7 +50,7 @@ const login: Endpoint = {
     let user: User
     try {
       // Payload's login enforces maxLoginAttempts and lockTime for us.
-      const result = await req.payload.login({ collection: 'users', data: { email, password }, depth: 0 })
+      const result = await req.payload.login({ collection: 'users', data: { email, password }, depth: 0, overrideAccess: true })
       if (!result.user) return error(401, 'invalid_credentials')
       user = result.user
     } catch (err) {

@@ -1,6 +1,6 @@
 # Sitekick platform
 
-Next.js 16 + Payload 3.90 + Postgres. It is the system of record for accounts, organizations, memberships, invites and sites, and it serves the `/api/v1` API used by the desktop app (and later mobile). Staff manage everything in the Payload admin at `/admin`. Clients never use the admin.
+Next.js 16 + Payload 4.0.0-beta.3 + Postgres. It is the system of record for accounts, organizations, memberships, invites and sites, and it serves the `/api/v1` API used by the desktop app (and later mobile). Staff manage everything in the Payload admin at `/admin`. Clients never use the admin.
 
 ## Local setup
 

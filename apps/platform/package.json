@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "engines": {
-    "node": ">=24 <25"
+    "node": ">=24.15.0 <25"
   },
   "scripts": {
     "dev": "next dev -p 3100",
@@ -33,17 +33,17 @@
   "dependencies": {
     "@neon/config": "^1.9.1",
     "@neon/env": "^1.6.2",
-    "@payloadcms/db-postgres": "3.90.2",
-    "@payloadcms/next": "3.90.2",
-    "@payloadcms/ui": "3.90.2",
+    "@payloadcms/db-postgres": "4.0.0-beta.3",
+    "@payloadcms/next": "4.0.0-beta.3",
+    "@payloadcms/ui": "4.0.0-beta.3",
     "@vercel/functions": "^3.10.1",
     "@vercel/sandbox": "^3.8.0",
-    "graphql": "^16.14.0",
+    "graphql": "16.14.2",
     "jose": "^6.2.12",
-    "next": "16.3.6",
-    "payload": "3.90.2",
-    "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "next": "16.4.2",
+    "payload": "4.0.0-beta.3",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
   },
   "devDependencies": {
     "@types/bun": "^1.4.3",
@@ -51,6 +51,6 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "embedded-postgres": "^18.4.0-beta.17",
-    "typescript": "^5"
+    "typescript": "6.0.3"
   }
 }
