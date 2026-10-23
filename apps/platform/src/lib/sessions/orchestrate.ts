@@ -141,6 +141,17 @@ export async function provisionSession(payload: Payload, sessionId: number): Pro
       persistent: false,
       tags: { sitekick: 'session', session: String(session.id) },
     })
+    // Without a source the working root doesn't exist yet: create it as root
+    // and hand it to the sandbox's default (non-root) user.
+    const whoami = await sandbox.runCommand({ cmd: 'id', args: ['-un'] })
+    const user = (await whoami.stdout()).trim() || 'vercel-sandbox'
+    for (const [cmd, args] of [
+      ['mkdir', ['-p', SANDBOX_HOME]],
+      ['chown', [`${user}:`, SANDBOX_HOME]],
+    ] as const) {
+      const r = await sandbox.runCommand({ cmd, args: [...args], sudo: true })
+      if (r.exitCode !== 0) throw new Error(`Preparing ${SANDBOX_HOME} failed: ${await r.stderr()}`)
+    }
     // Clone ourselves: the SDK's git source leaves no .git directory, and
     // later milestones commit and push from here. The token goes only into
     // this one command (never logged), and the remote is reset without it.
