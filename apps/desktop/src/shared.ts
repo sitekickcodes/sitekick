@@ -61,6 +61,9 @@ export type SessionInfo = {
   readonly statusPath: Uint8Array;
   readonly heartbeatPath: Uint8Array;
   readonly stopPath: Uint8Array;
+  readonly messagesPath: Uint8Array;
+  readonly undoPath: Uint8Array;
+  readonly agentWorking: boolean;
 };
 
 export type OpenBrowserRequest = {
@@ -69,4 +72,29 @@ export type OpenBrowserRequest = {
 
 export type OpenBrowserResult = {
   readonly opened: boolean;
+};
+
+export type ChatRole = "user" | "assistant" | "tool" | "notice";
+
+/** One chat line. An interface: the Model keeps an array of them. */
+export interface ChatMessage {
+  /** The message id as text, for list keys. */
+  readonly key: Uint8Array;
+  readonly role: ChatRole;
+  readonly text: Uint8Array;
+}
+
+export type ChatResult = {
+  readonly messages: readonly ChatMessage[];
+  /** The path for the next poll (`.../messages?after=<last id>`). */
+  readonly nextPath: Uint8Array;
+  readonly agentWorking: boolean;
+};
+
+export type PromptRequest = {
+  readonly text: Uint8Array;
+};
+
+export type PromptBody = {
+  readonly body: Uint8Array;
 };

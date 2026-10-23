@@ -1,6 +1,6 @@
 // Decodes platform /api/v1 responses into typed records. The core can't use
 // JSON, so it fetches with Cmd.fetch and hands the body bytes here.
-import type { DeviceStart, ParseRequest, SessionInfo, SessionStatus, Site, SitesResult, TokensResult } from "../shared.ts";
+import type { ChatMessage, ChatResult, ChatRole, DeviceStart, ParseRequest, PromptBody, PromptRequest, SessionInfo, SessionStatus, Site, SitesResult, TokensResult } from "../shared.ts";
 
 const encoder = new TextEncoder();
 
@@ -94,5 +94,38 @@ export function parseSession(request: ParseRequest): SessionInfo {
     statusPath: encoder.encode(`/api/v1/sessions/${id}`),
     heartbeatPath: encoder.encode(`/api/v1/sessions/${id}/heartbeat`),
     stopPath: encoder.encode(`/api/v1/sessions/${id}/stop`),
+    messagesPath: encoder.encode(`/api/v1/sessions/${id}/messages`),
+    undoPath: encoder.encode(`/api/v1/sessions/${id}/undo`),
+    agentWorking: body["agentStatus"] === "working",
   };
+}
+
+const ROLES: readonly ChatRole[] = ["user", "assistant", "tool", "notice"];
+
+/** GET /sessions/:id/messages body. */
+export function parseChat(request: ParseRequest): ChatResult {
+  const body = decodeObject(request.body);
+  const session = body["session"];
+  const sessionId = session !== null && typeof session === "object" ? (session as Record<string, unknown>)["id"] : null;
+  if (typeof sessionId !== "number") throw { kind: "bad_shape", message: "missing session in the chat response" };
+  const raw = body["messages"];
+  const messages: ChatMessage[] = [];
+  for (const entry of Array.isArray(raw) ? raw : []) {
+    if (entry === null || typeof entry !== "object") continue;
+    const m = entry as Record<string, unknown>;
+    const role = ROLES.find((r) => r === m["role"]);
+    if (typeof m["id"] !== "number" || role === undefined || typeof m["text"] !== "string") continue;
+    messages.push({ key: encoder.encode(String(m["id"])), role, text: encoder.encode(m["text"]) });
+  }
+  const nextAfter = typeof body["nextAfter"] === "number" ? body["nextAfter"] : 0;
+  return {
+    messages,
+    nextPath: encoder.encode(`/api/v1/sessions/${sessionId}/messages?after=${nextAfter}`),
+    agentWorking: (session as Record<string, unknown>)["agentStatus"] === "working",
+  };
+}
+
+/** The JSON body for POST /sessions/:id/messages (the core can't escape JSON). */
+export function encodePrompt(request: PromptRequest): PromptBody {
+  return { body: encoder.encode(JSON.stringify({ text: new TextDecoder().decode(request.text) })) };
 }

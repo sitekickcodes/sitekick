@@ -42,6 +42,31 @@
 {"settle": true}
 {"kind":"reload_preview"}
 
+# Ready: the chat history loads once (empty here).
+{"kind":"chat_fetched","status":200,"body":{"$bytes":"{\"session\":{\"id\":7,\"status\":\"ready\",\"agentStatus\":\"idle\"},\"messages\":[],\"nextAfter\":0}"}}
+{"settle": true}
+
+# Type a request and send it; the service encodes the JSON body.
+{"kind":"draft_edited","edit":{"kind":"insert_text","text":{"$bytes":"Make the headline say \"Housing for all\""}}}
+{"kind":"send_prompt"}
+{"settle": true}
+{"kind":"prompt_sent","status":202,"body":{"$bytes":"{}"}}
+{"settle": true}
+
+# While the agent works the chat polls every 1.5s.
+{"kind":"chat_fetched","status":200,"body":{"$bytes":"{\"session\":{\"id\":7,\"status\":\"ready\",\"agentStatus\":\"working\"},\"messages\":[{\"id\":1,\"role\":\"user\",\"text\":\"Make the headline say \\\"Housing for all\\\"\",\"turn\":0}],\"nextAfter\":1}"}}
+{"settle": true}
+{"advance": 1500}
+{"settle": true}
+{"kind":"chat_fetched","status":200,"body":{"$bytes":"{\"session\":{\"id\":7,\"status\":\"ready\",\"agentStatus\":\"idle\"},\"messages\":[{\"id\":2,\"role\":\"tool\",\"text\":\"Edited src/app/page.tsx\",\"turn\":0},{\"id\":3,\"role\":\"assistant\",\"text\":\"I changed the homepage headline.\",\"turn\":0},{\"id\":4,\"role\":\"notice\",\"text\":\"Saved a checkpoint (1 file changed). You can undo it.\",\"turn\":0}],\"nextAfter\":4}"}}
+{"settle": true}
+
+# Undo the checkpoint.
+{"kind":"undo_last"}
+{"settle": true}
+{"kind":"undo_done","status":200,"body":{"$bytes":"{\"undone\":\"Make the headline say\"}"}}
+{"settle": true}
+
 # Heartbeat after five minutes keeps the sandbox alive.
 {"advance": 300000}
 {"settle": true}

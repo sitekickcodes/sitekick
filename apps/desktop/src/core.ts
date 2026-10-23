@@ -19,15 +19,15 @@
 import { Cmd, Sub, asciiBytes, utf8Bytes, type EnvMsg } from "@native-sdk/core";
 import type { WebViewPane } from "@native-sdk/core/events";
 import { applyTextInputEvent, clampedInsertEvent, containsIgnoreCase, type TextEditState, type TextInputEvent } from "@native-sdk/core/text";
-import { apiParseDeviceStart, apiParseSession, apiParseSites, apiParseTokens, systemOpenBrowser } from "@native-sdk/services";
+import { apiEncodePrompt, apiParseChat, apiParseDeviceStart, apiParseSession, apiParseSites, apiParseTokens, systemOpenBrowser } from "@native-sdk/services";
 
 import { afterNewline, beforeNewline, joined, sameBytes } from "./bytes.ts";
-import type { DeviceStart, OpenBrowserResult, SessionInfo, Site, SitesResult, TokensResult } from "./shared.ts";
+import type { ChatMessage, ChatResult, DeviceStart, OpenBrowserResult, PromptBody, SessionInfo, Site, SitesResult, TokensResult } from "./shared.ts";
 
 export type Screen = "starting" | "signedOut" | "awaitingApproval" | "loadingSites" | "pickingSite" | "workspace";
 
 /// What to resume after a token refresh triggered by a 401.
-export type AfterRefresh = "loadSites" | "startSession" | "pollSession" | "heartbeat" | "stopSession";
+export type AfterRefresh = "loadSites" | "startSession" | "pollSession" | "heartbeat" | "stopSession" | "pollChat" | "sendPrompt" | "undo";
 
 /// The open site's session, as the platform reports it ("none" before one exists).
 export type SessionState =
@@ -76,6 +76,22 @@ export interface Model {
   readonly sessionHeartbeatPath: Uint8Array;
   readonly sessionStopPath: Uint8Array;
   readonly reloadToken: number;
+  // ---- agent chat for the open session
+  readonly chat: readonly ChatMessage[];
+  readonly chatLoaded: boolean;
+  /// Next poll path (`.../messages?after=<last id>`).
+  readonly chatPath: Uint8Array;
+  readonly agentWorking: boolean;
+  readonly chatNotice: Uint8Array;
+  readonly sessionMessagesPath: Uint8Array;
+  readonly sessionUndoPath: Uint8Array;
+  /// The encoded request body waiting for its keychain read (not secret).
+  readonly pendingBody: Uint8Array;
+  readonly draft: Uint8Array;
+  readonly draftAnchor: number;
+  readonly draftFocus: number;
+  readonly draftCompStart: number;
+  readonly draftCompEnd: number;
   readonly afterRefresh: AfterRefresh;
   readonly afterStop: AfterStop;
 }
@@ -127,6 +143,20 @@ export type Msg =
   | { readonly kind: "session_for_heartbeat"; readonly session: Uint8Array }
   | { readonly kind: "heartbeat_sent"; readonly status: number; readonly body: Uint8Array }
   | { readonly kind: "reload_preview" }
+  // agent chat
+  | { readonly kind: "chat_tick"; readonly at: number }
+  | { readonly kind: "session_for_chat"; readonly session: Uint8Array }
+  | { readonly kind: "chat_fetched"; readonly status: number; readonly body: Uint8Array }
+  | { readonly kind: "chat_parsed"; readonly result: ChatResult }
+  | { readonly kind: "draft_edited"; readonly edit: TextInputEvent }
+  | { readonly kind: "send_prompt" }
+  | { readonly kind: "prompt_encoded"; readonly result: PromptBody }
+  | { readonly kind: "session_for_send"; readonly session: Uint8Array }
+  | { readonly kind: "prompt_sent"; readonly status: number; readonly body: Uint8Array }
+  | { readonly kind: "undo_last" }
+  | { readonly kind: "session_for_undo"; readonly session: Uint8Array }
+  | { readonly kind: "undo_done"; readonly status: number; readonly body: Uint8Array }
+  | { readonly kind: "chat_request_failed"; readonly reason: Uint8Array }
   | { readonly kind: "session_for_stop"; readonly session: Uint8Array }
   | { readonly kind: "session_stopped"; readonly status: number; readonly body: Uint8Array }
   | { readonly kind: "stop_failed"; readonly reason: Uint8Array }
@@ -154,6 +184,9 @@ const JSON_HEADERS = { "content-type": "application/json" };
 const STATUS_POLL_MS = 2000;
 const HEARTBEAT_MS = 5 * 60 * 1000;
 const MAX_RELOAD_TOKEN = 1000000000;
+const CHAT_POLL_MS = 1500;
+const MAX_DRAFT_BYTES = 8000;
+const MAX_CHAT_MESSAGES = 400;
 
 export function initialModel(): [Model, Cmd<Msg>] {
   return [
@@ -183,6 +216,19 @@ export function initialModel(): [Model, Cmd<Msg>] {
       sessionHeartbeatPath: EMPTY,
       sessionStopPath: EMPTY,
       reloadToken: 0,
+      chat: [],
+      chatLoaded: false,
+      chatPath: EMPTY,
+      agentWorking: false,
+      chatNotice: EMPTY,
+      sessionMessagesPath: EMPTY,
+      sessionUndoPath: EMPTY,
+      pendingBody: EMPTY,
+      draft: EMPTY,
+      draftAnchor: 0,
+      draftFocus: 0,
+      draftCompStart: -1,
+      draftCompEnd: -1,
       afterRefresh: "loadSites",
       afterStop: "nothing",
     },
@@ -208,7 +254,23 @@ function withoutSession(model: Model): Model {
     sessionHeartbeatPath: EMPTY,
     sessionStopPath: EMPTY,
     afterStop: "nothing",
+    chat: [],
+    chatLoaded: false,
+    chatPath: EMPTY,
+    agentWorking: false,
+    chatNotice: EMPTY,
+    sessionMessagesPath: EMPTY,
+    sessionUndoPath: EMPTY,
+    pendingBody: EMPTY,
   };
+}
+
+function draftIsBlank(draft: Uint8Array): boolean {
+  for (let i = 0; i < draft.length; i++) {
+    const c = draft[i];
+    if (c !== 32 && c !== 9 && c !== 10 && c !== 13) return false;
+  }
+  return true;
 }
 
 function signedOut(model: Model, notice: Uint8Array): Model {
@@ -371,6 +433,12 @@ export function update(model: Model, msg: Msg): [Model, Cmd<Msg>] {
           return [{ ...model, afterRefresh: "loadSites" }, Cmd.credentials.get(SESSION, { ok: "session_for_heartbeat", err: "session_missing" })];
         case "stopSession":
           return [{ ...model, afterRefresh: "loadSites" }, Cmd.credentials.get(SESSION, { ok: "session_for_stop", err: "session_missing" })];
+        case "pollChat":
+          return [{ ...model, afterRefresh: "loadSites" }, Cmd.credentials.get(SESSION, { ok: "session_for_chat", err: "session_missing" })];
+        case "sendPrompt":
+          return [{ ...model, afterRefresh: "loadSites" }, Cmd.credentials.get(SESSION, { ok: "session_for_send", err: "session_missing" })];
+        case "undo":
+          return [{ ...model, afterRefresh: "loadSites" }, Cmd.credentials.get(SESSION, { ok: "session_for_undo", err: "session_missing" })];
         case "loadSites":
           return [{ ...model, screen: "loadingSites" }, Cmd.credentials.get(SESSION, { ok: "session_for_sites", err: "session_missing" })];
       }
@@ -467,20 +535,29 @@ export function update(model: Model, msg: Msg): [Model, Cmd<Msg>] {
         return [{ ...model, sessionStatus: "failed", sessionError: utf8Bytes("Sitekick couldn’t start a session. Try again in a moment.") }, Cmd.none];
       }
       return [model, apiParseSession({ body: msg.body }, { key: "parse-session", ok: "session_parsed", err: "parse_failed" })];
-    case "session_parsed":
+    case "session_parsed": {
       if (model.screen !== "workspace") return [model, Cmd.none];
-      return [
-        {
-          ...model,
-          sessionStatus: msg.result.status,
-          previewUrl: msg.result.previewUrl,
-          sessionError: msg.result.problem,
-          sessionStatusPath: msg.result.statusPath,
-          sessionHeartbeatPath: msg.result.heartbeatPath,
-          sessionStopPath: msg.result.stopPath,
-        },
-        Cmd.none,
-      ];
+      const next: Model = {
+        ...model,
+        sessionStatus: msg.result.status,
+        previewUrl: msg.result.previewUrl,
+        sessionError: msg.result.problem,
+        sessionStatusPath: msg.result.statusPath,
+        sessionHeartbeatPath: msg.result.heartbeatPath,
+        sessionStopPath: msg.result.stopPath,
+        sessionMessagesPath: msg.result.messagesPath,
+        sessionUndoPath: msg.result.undoPath,
+        agentWorking: msg.result.agentWorking,
+      };
+      // First time it's ready: load the conversation so far.
+      if (msg.result.status === "ready" && !model.chatLoaded) {
+        return [
+          { ...next, chatLoaded: true, chatPath: msg.result.messagesPath },
+          Cmd.credentials.get(SESSION, { ok: "session_for_chat", err: "session_missing" }),
+        ];
+      }
+      return [next, Cmd.none];
+    }
     case "status_tick":
       if (model.screen !== "workspace" || model.sessionStatusPath.length === 0) return [model, Cmd.none];
       return [model, Cmd.credentials.get(SESSION, { ok: "session_for_status", err: "session_missing" })];
@@ -515,6 +592,106 @@ export function update(model: Model, msg: Msg): [Model, Cmd<Msg>] {
       if (msg.status !== 200) return [model, Cmd.none];
       // The platform may report the session stopped (idle reaper): show it.
       return [model, apiParseSession({ body: msg.body }, { key: "parse-session", ok: "session_parsed", err: "parse_failed" })];
+    // -------------------------------------------------------- agent chat
+    case "chat_tick":
+      if (model.sessionStatus !== "ready" || model.chatPath.length === 0) return [model, Cmd.none];
+      return [model, Cmd.credentials.get(SESSION, { ok: "session_for_chat", err: "session_missing" })];
+    case "session_for_chat":
+      if (model.chatPath.length === 0) return [model, Cmd.none];
+      return [
+        model,
+        Cmd.fetch(
+          { url: url(model, model.chatPath), headers: { authorization: bearer(msg.session) }, timeoutMs: 15000 },
+          // Overlapping polls are rejected on this key and ignored.
+          { key: "chat-poll", ok: "chat_fetched", err: "ignored" },
+        ),
+      ];
+    case "chat_fetched":
+      if (msg.status === 401) return [{ ...model, afterRefresh: "pollChat" }, Cmd.credentials.get(SESSION, { ok: "session_for_refresh", err: "session_missing" })];
+      if (msg.status !== 200) return [model, Cmd.none];
+      return [model, apiParseChat({ body: msg.body }, { key: "parse-chat", ok: "chat_parsed", err: "chat_request_failed" })];
+    case "chat_parsed": {
+      if (model.screen !== "workspace") return [model, Cmd.none];
+      const all = model.chat.concat(msg.result.messages);
+      const chat = all.length > MAX_CHAT_MESSAGES ? all.slice(all.length - MAX_CHAT_MESSAGES) : all;
+      return [{ ...model, chat, chatPath: msg.result.nextPath, agentWorking: msg.result.agentWorking }, Cmd.none];
+    }
+    case "draft_edited": {
+      const state: TextEditState = {
+        text: model.draft,
+        selection: { anchor: model.draftAnchor, focus: model.draftFocus },
+        composition: model.draftCompStart >= 0 ? { start: model.draftCompStart, end: model.draftCompEnd } : null,
+      };
+      let next = applyTextInputEvent(state, msg.edit, MAX_DRAFT_BYTES);
+      if (next === null) {
+        const clamped = clampedInsertEvent(state, msg.edit, MAX_DRAFT_BYTES);
+        if (clamped === null) return [model, Cmd.none];
+        next = applyTextInputEvent(state, clamped, MAX_DRAFT_BYTES);
+        if (next === null) return [model, Cmd.none];
+      }
+      const start = next.composition !== null ? next.composition.start : -1;
+      const end = next.composition !== null ? next.composition.end : -1;
+      return [
+        {
+          ...model,
+          draft: next.text,
+          draftAnchor: next.selection.anchor,
+          draftFocus: next.selection.focus,
+          draftCompStart: start >= -1 && start <= 9007199254740991 ? Math.trunc(start) : -1,
+          draftCompEnd: end >= -1 && end <= 9007199254740991 ? Math.trunc(end) : -1,
+        },
+        Cmd.none,
+      ];
+    }
+    case "send_prompt":
+      if (model.sessionStatus !== "ready" || model.agentWorking || draftIsBlank(model.draft)) return [model, Cmd.none];
+      return [{ ...model, chatNotice: EMPTY }, apiEncodePrompt({ text: model.draft }, { key: "encode-prompt", ok: "prompt_encoded", err: "chat_request_failed" })];
+    case "prompt_encoded":
+      return [{ ...model, pendingBody: msg.result.body }, Cmd.credentials.get(SESSION, { ok: "session_for_send", err: "session_missing" })];
+    case "session_for_send":
+      if (model.pendingBody.length === 0 || model.sessionMessagesPath.length === 0) return [model, Cmd.none];
+      return [
+        model,
+        Cmd.fetch(
+          {
+            url: url(model, model.sessionMessagesPath),
+            method: "POST",
+            headers: { authorization: bearer(msg.session), "content-type": "application/json" },
+            body: model.pendingBody,
+            timeoutMs: 30000,
+          },
+          { key: "chat-send", ok: "prompt_sent", err: "chat_request_failed" },
+        ),
+      ];
+    case "prompt_sent":
+      if (msg.status === 401) return [{ ...model, afterRefresh: "sendPrompt" }, Cmd.credentials.get(SESSION, { ok: "session_for_refresh", err: "session_missing" })];
+      if (msg.status === 202) {
+        // Sent: clear the box and pick up the person's message right away.
+        return [
+          { ...model, pendingBody: EMPTY, draft: EMPTY, draftAnchor: 0, draftFocus: 0, draftCompStart: -1, draftCompEnd: -1, agentWorking: true },
+          Cmd.credentials.get(SESSION, { ok: "session_for_chat", err: "session_missing" }),
+        ];
+      }
+      if (msg.status === 409) return [{ ...model, pendingBody: EMPTY, chatNotice: utf8Bytes("The agent is still working on your last request.") }, Cmd.none];
+      return [{ ...model, pendingBody: EMPTY, chatNotice: utf8Bytes("Couldn’t send that. Try again in a moment.") }, Cmd.none];
+    case "undo_last":
+      if (model.sessionStatus !== "ready" || model.agentWorking || model.sessionUndoPath.length === 0) return [model, Cmd.none];
+      return [{ ...model, chatNotice: EMPTY }, Cmd.credentials.get(SESSION, { ok: "session_for_undo", err: "session_missing" })];
+    case "session_for_undo":
+      return [
+        model,
+        Cmd.fetch(
+          { url: url(model, model.sessionUndoPath), method: "POST", headers: { authorization: bearer(msg.session) }, timeoutMs: 60000 },
+          { key: "chat-undo", ok: "undo_done", err: "chat_request_failed" },
+        ),
+      ];
+    case "undo_done":
+      if (msg.status === 401) return [{ ...model, afterRefresh: "undo" }, Cmd.credentials.get(SESSION, { ok: "session_for_refresh", err: "session_missing" })];
+      if (msg.status === 200) return [model, Cmd.credentials.get(SESSION, { ok: "session_for_chat", err: "session_missing" })];
+      if (msg.status === 409) return [{ ...model, chatNotice: utf8Bytes("There are no agent changes to undo.") }, Cmd.none];
+      return [{ ...model, chatNotice: utf8Bytes("Couldn’t undo. Try again in a moment.") }, Cmd.none];
+    case "chat_request_failed":
+      return [{ ...model, pendingBody: EMPTY, chatNotice: utf8Bytes("Can’t reach Sitekick. Check your connection and try again.") }, Cmd.none];
     case "reload_preview":
       return [{ ...model, reloadToken: model.reloadToken < MAX_RELOAD_TOKEN ? model.reloadToken + 1 : 0 }, Cmd.none];
     case "session_for_stop":
@@ -623,7 +800,12 @@ export function subscriptions(model: Model): Sub<Msg> {
   if (model.screen === "awaitingApproval") return Sub.timer("device-poll-timer", model.pollMs, "poll_tick");
   if (model.screen !== "workspace") return Sub.none;
   if (provisioning(model) && model.sessionStatusPath.length > 0) return Sub.timer("session-status-timer", STATUS_POLL_MS, "status_tick");
-  if (model.sessionStatus === "ready") return Sub.timer("session-heartbeat-timer", HEARTBEAT_MS, "heartbeat_tick");
+  if (model.sessionStatus === "ready") {
+    // While the agent works, poll its progress (each turn also counts as
+    // activity on the platform); otherwise keep the sandbox alive.
+    if (model.agentWorking) return Sub.timer("chat-poll-timer", CHAT_POLL_MS, "chat_tick");
+    return Sub.timer("session-heartbeat-timer", HEARTBEAT_MS, "heartbeat_tick");
+  }
   return Sub.none;
 }
 
@@ -759,6 +941,25 @@ export function sessionPhase(model: Model): Uint8Array {
   }
 }
 
+export function chatEmpty(model: Model): boolean {
+  return model.chat.length === 0 && !model.agentWorking;
+}
+export function hasChatNotice(model: Model): boolean {
+  return model.chatNotice.length > 0;
+}
+export function canSend(model: Model): boolean {
+  return model.sessionStatus === "ready" && !model.agentWorking && !draftIsBlank(model.draft);
+}
+export function cannotSend(model: Model): boolean {
+  return !canSend(model);
+}
+export function draftLocked(model: Model): boolean {
+  return model.agentWorking;
+}
+export function cannotUndo(model: Model): boolean {
+  return model.sessionStatus !== "ready" || model.agentWorking;
+}
+
 export function sessionProblem(model: Model): Uint8Array {
   return model.sessionError;
 }
@@ -782,4 +983,8 @@ export const viewUnbound = [
   "queryAnchor", "queryFocus", "queryCompStart", "queryCompEnd", "userName",
   "sessionStatus", "previewUrl", "sessionError", "sessionStatusPath", "sessionHeartbeatPath", "sessionStopPath",
   "reloadToken", "afterRefresh", "afterStop",
+  "chat_tick", "session_for_chat", "chat_fetched", "chat_parsed", "prompt_encoded", "session_for_send", "prompt_sent",
+  "session_for_undo", "undo_done", "chat_request_failed",
+  "chatLoaded", "chatPath", "sessionMessagesPath", "sessionUndoPath", "pendingBody",
+  "draftAnchor", "draftFocus", "draftCompStart", "draftCompEnd",
 ] as const;

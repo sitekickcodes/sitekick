@@ -116,8 +116,56 @@
         </row>
         <separator />
         <if test="{previewReady}">
-          <!-- The preview WebView (app.json "preview") is pinned here by webPanes() in core.ts. -->
-          <panel grow="1" label="preview-pane"></panel>
+          <row grow="1">
+            <!-- The preview WebView (app.json "preview") is pinned here by webPanes() in core.ts. -->
+            <panel grow="1" label="preview-pane"></panel>
+            <separator />
+            <column width="360" padding="12" gap="10">
+              <text size="sm" foreground="text_muted">Ask for a change to this site. You'll see it in the preview.</text>
+              <scroll grow="1" label="Conversation">
+                <column gap="8">
+                  <if test="{chatEmpty}">
+                    <text size="sm" foreground="text_muted" wrap="true">For example: “Make the homepage headline say Housing for everyone” or “Add a donate button to the header.”</text>
+                  </if>
+                  <for each="chat" as="m" key="key">
+                    <if test="{m.role == 'user'}">
+                      <column cross="end">
+                        <bubble variant="primary">
+                          <text wrap="true">{m.text}</text>
+                        </bubble>
+                      </column>
+                    </if>
+                    <if test="{m.role == 'assistant'}">
+                      <bubble>
+                        <text wrap="true">{m.text}</text>
+                      </bubble>
+                    </if>
+                    <if test="{m.role == 'tool'}">
+                      <text size="sm" foreground="text_muted" wrap="true">{m.text}</text>
+                    </if>
+                    <if test="{m.role == 'notice'}">
+                      <text size="sm" foreground="text_muted" wrap="true">{m.text}</text>
+                    </if>
+                  </for>
+                  <if test="{agentWorking}">
+                    <row gap="8" cross="center">
+                      <spinner />
+                      <text size="sm" foreground="text_muted">Working…</text>
+                    </row>
+                  </if>
+                </column>
+              </scroll>
+              <if test="{hasChatNotice}">
+                <text size="sm" foreground="text_muted" wrap="true">{chatNotice}</text>
+              </if>
+              <textarea height="88" placeholder="Describe a change…" text="{draft}" disabled="{draftLocked}" submit-on-enter="true" on-input="draft_edited" on-submit="send_prompt" />
+              <row gap="8" cross="center">
+                <button variant="ghost" size="sm" disabled="{cannotUndo}" on-press="undo_last">Undo last change</button>
+                <spacer grow="1" />
+                <button variant="primary" size="sm" disabled="{cannotSend}" on-press="send_prompt">Send</button>
+              </row>
+            </column>
+          </row>
         </if>
         <if test="{sessionSettingUp}">
           <column grow="1" main="center" cross="center" gap="12" padding="24">
