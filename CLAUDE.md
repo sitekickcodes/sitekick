@@ -40,6 +40,9 @@ Architecture, domain model and milestones are in docs/architecture.md. Setup is 
   - No `JSON` in the core: decode in `src/services/`. `Uint8Array.indexOf`/`includes(bytes)` don't compile, so use loops or `containsIgnoreCase`.
   - A `<for>` key must be a proven integer or bytes field. A number from a service isn't proven, so key on bytes (for example `slug`).
   - Every fetch `ok` arm should read its `status`, or the shared dispatcher fails integer proofs (SC4022).
+  - Record fields can't be Zig keywords (`error`, `type`, …), and a union can't widen a named union (`SessionStatus | "none"`): spell one flat literal union.
+  - `Cmd.openExternalUrl` is always denied in SDK 0.11 TypeScript apps (the runner drops `external_links`). Use `systemOpenBrowser` from `src/services/system.ts`.
+  - Manifest WebViews need a real `http(s)` URL (not `about:blank`) and a non-zero frame.
 - Secrets (tokens, device codes) never go in the Model. They live in the Keychain via `Cmd.credentials` and are read just before the request that needs them.
 
 ### Desktop architecture

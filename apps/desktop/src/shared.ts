@@ -62,3 +62,11 @@ export type SessionInfo = {
   readonly heartbeatPath: Uint8Array;
   readonly stopPath: Uint8Array;
 };
+
+export type OpenBrowserRequest = {
+  readonly url: Uint8Array;
+};
+
+export type OpenBrowserResult = {
+  readonly opened: boolean;
+};

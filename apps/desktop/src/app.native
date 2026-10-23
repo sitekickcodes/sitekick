@@ -34,6 +34,7 @@
           <text size="heading">Finish in your browser</text>
           <text wrap="true" foreground="text_muted">Sign in on the page that just opened and check it shows this code:</text>
           <text size="heading">{userCode}</text>
+          <text wrap="true" size="sm" foreground="text_muted">If no page opened, go to {activateAddress} in your browser and enter the code.</text>
           <row gap="8" cross="center">
             <spinner />
             <text size="sm" foreground="text_muted">Waiting for approval…</text>

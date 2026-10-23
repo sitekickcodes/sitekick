@@ -19,10 +19,10 @@
 import { Cmd, Sub, asciiBytes, utf8Bytes, type EnvMsg } from "@native-sdk/core";
 import type { WebViewPane } from "@native-sdk/core/events";
 import { applyTextInputEvent, clampedInsertEvent, containsIgnoreCase, type TextEditState, type TextInputEvent } from "@native-sdk/core/text";
-import { apiParseDeviceStart, apiParseSession, apiParseSites, apiParseTokens } from "@native-sdk/services";
+import { apiParseDeviceStart, apiParseSession, apiParseSites, apiParseTokens, systemOpenBrowser } from "@native-sdk/services";
 
 import { afterNewline, beforeNewline, joined, sameBytes } from "./bytes.ts";
-import type { DeviceStart, SessionInfo, Site, SitesResult, TokensResult } from "./shared.ts";
+import type { DeviceStart, OpenBrowserResult, SessionInfo, Site, SitesResult, TokensResult } from "./shared.ts";
 
 export type Screen = "starting" | "signedOut" | "awaitingApproval" | "loadingSites" | "pickingSite" | "workspace";
 
@@ -96,6 +96,8 @@ export type Msg =
   | { readonly kind: "device_parsed"; readonly result: DeviceStart }
   | { readonly kind: "device_code_saved" }
   | { readonly kind: "open_browser" }
+  | { readonly kind: "browser_opened"; readonly result: OpenBrowserResult }
+  | { readonly kind: "browser_open_failed"; readonly error: Uint8Array }
   | { readonly kind: "poll_tick"; readonly at: number }
   | { readonly kind: "device_code_loaded"; readonly code: Uint8Array }
   | { readonly kind: "polled"; readonly status: number; readonly body: Uint8Array }
@@ -304,7 +306,13 @@ export function update(model: Model, msg: Msg): [Model, Cmd<Msg>] {
       ];
     case "device_code_saved":
     case "open_browser":
-      return [model, Cmd.openExternalUrl(model.verificationUri)];
+      // Cmd.openExternalUrl is always denied by SDK 0.11 for TypeScript cores;
+      // the system service opens it instead (src/services/system.ts).
+      return [model, systemOpenBrowser({ url: model.verificationUri }, { key: "open-browser", ok: "browser_opened", err: "browser_open_failed" })];
+    case "browser_opened":
+    case "browser_open_failed":
+      // The screen already shows the address and code to use by hand.
+      return [model, Cmd.none];
     case "poll_tick":
       if (model.screen !== "awaitingApproval") return [model, Cmd.none];
       return [model, Cmd.credentials.get(DEVICE_CODE, { ok: "device_code_loaded", err: "keychain_failed" })];
@@ -710,6 +718,12 @@ export function emptyHelp(model: Model): Uint8Array {
     : utf8Bytes("You don’t have access to any sites yet. Ask your Sitekick contact to invite you.");
 }
 
+/// Shown on the sign-in screen so the flow never depends on the browser
+/// opening by itself.
+export function activateAddress(model: Model): Uint8Array {
+  return joined([model.apiBase, asciiBytes("/activate")]);
+}
+
 export function previewReady(model: Model): boolean {
   return model.sessionStatus === "ready";
 }
@@ -759,7 +773,7 @@ export const envMsgs: readonly EnvMsg<Msg>[] = [{ env: "SITEKICK_API_URL", msg: 
 export const viewUnbound = [
   "api_base_set", "last_site_loaded", "last_site_missing", "session_missing", "session_for_refresh", "refreshed",
   "device_started", "device_parsed", "device_code_saved", "poll_tick", "device_code_loaded", "polled",
-  "tokens_parsed", "session_saved", "device_code_cleared", "device_code_clear_failed", "session_for_sites", "sites_fetched",
+  "browser_opened", "browser_open_failed", "tokens_parsed", "session_saved", "device_code_cleared", "device_code_clear_failed", "session_for_sites", "sites_fetched",
   "sites_parsed", "session_for_start", "session_started", "session_parsed", "status_tick", "session_for_status",
   "status_fetched", "heartbeat_tick", "session_for_heartbeat", "heartbeat_sent", "session_for_stop", "session_stopped",
   "stop_failed", "session_for_logout", "logged_out", "logout_failed", "session_deleted", "saved", "request_failed",

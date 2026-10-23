@@ -111,6 +111,21 @@ Each site's **Connection** panel in the admin is re-checked on every save, and b
 
 Without these, the panel shows **Platform not configured**. For local checks, put the same variables in `.env`; the test suite doesn't need them.
 
+## Editing sessions (M3)
+
+`POST /api/v1/sites/:id/sessions` (staff, or owners and editors of the site's organization) starts, or returns, the caller's session for a site. Setup runs after the response (`waitUntil`; the API route allows 800 s) through `src/lib/sessions/orchestrate.ts`:
+
+1. **branching:** a Neon branch `sitekick/s-<id>` copied from the site's parent branch (never production). Needs `NEON_API_KEY`, an org key for the Sitekick Neon org.
+2. **booting:** a Vercel Sandbox (pdx1, 4 vCPU, 45 min, extended by heartbeats) and a clone of the repo into `/vercel/sandbox/site` with a GitHub App token. The token goes only into the clone command; the remote is then reset without it. The branch is `sitekick/session-<id>`.
+3. **installing / migrating / starting_server:** the site's install, optional migrate and dev commands (Sandbox settings on the site), with `.env.local` holding the session's `DATABASE_URL`, a fresh `PAYLOAD_SECRET`, and the site's sandbox-only variables (`{{previewUrl}}` is substituted). There's never a Blob token, so a sandbox can't touch production media.
+4. **ready:** the dev server answers, and its public port is the preview URL.
+
+`GET /api/v1/sessions/:id`, `POST …/heartbeat` and `POST …/stop` drive it from the app. Stopping (and deleting a site or user) stops the VM and deletes the Neon branch. A cron (`/api/v1/cron/sessions` every 10 minutes, `CRON_SECRET`) stops sessions idle for 30 minutes, fails ones stuck in a phase for 20 minutes, and retries leftover branch deletions.
+
+Preview URLs are **public, unguessable links**, not signed in. Fine for now; revisit before clients use it.
+
+First real run (2026-10-23, YIMBY on Payload 4 beta): ready in 49 s. Branch, Bun install of 1,257 packages in 3 s, one pending migration applied on the session's branch, homepage served from the sandbox. Stopping removed the VM and the branch.
+
 ## Not done yet
 
 - **GitHub connection** for Git deploys, with root directory `apps/platform`. Then the Neon integration can create a database branch per preview, and previews can migrate their own branch.
