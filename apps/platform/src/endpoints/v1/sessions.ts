@@ -149,6 +149,8 @@ const list: Endpoint = {
     return json({
       session: summary(session),
       messages: docs.map((m) => ({ id: m.id, role: m.role, text: m.text, turn: m.turn })),
+      // Poll again with ?after=nextAfter.
+      nextAfter: docs.length ? docs[docs.length - 1]!.id : Math.max(0, after),
     })
   },
 }
