@@ -25,7 +25,8 @@ const READY_TIMEOUT_MS = 8 * 60_000
 export const IDLE_STOP_MS = 30 * 60_000
 export const STUCK_PHASE_MS = 20 * 60_000
 const LOG_TAIL = 6000
-const REPO_DIR = '/vercel/sandbox'
+const SANDBOX_HOME = '/vercel/sandbox'
+const REPO_DIR = '/vercel/sandbox/site'
 
 type Status = Session['status']
 
@@ -133,14 +134,6 @@ export async function provisionSession(payload: Payload, sessionId: number): Pro
     const token = await repoAccessToken(github, site.githubRepo)
     sandbox = await Sandbox.create({
       name: sandboxNameFor(session.id),
-      source: {
-        type: 'git',
-        url: `https://github.com/${site.githubRepo}.git`,
-        username: 'x-access-token',
-        password: token,
-        depth: 1,
-        ...(site.defaultBranch ? { revision: site.defaultBranch } : {}),
-      },
       ports: [PORT],
       timeout: SANDBOX_TIMEOUT_MS,
       resources: { vcpus: VCPUS },
@@ -148,6 +141,25 @@ export async function provisionSession(payload: Payload, sessionId: number): Pro
       persistent: false,
       tags: { sitekick: 'session', session: String(session.id) },
     })
+    // Clone ourselves: the SDK's git source leaves no .git directory, and
+    // later milestones commit and push from here. The token goes only into
+    // this one command (never logged), and the remote is reset without it.
+    const clone = await sandbox.runCommand({
+      cmd: 'git',
+      args: [
+        'clone',
+        '--depth',
+        '1',
+        ...(site.defaultBranch ? ['--branch', site.defaultBranch] : []),
+        `https://x-access-token:${token}@github.com/${site.githubRepo}.git`,
+        REPO_DIR,
+      ],
+      cwd: SANDBOX_HOME,
+    })
+    if (clone.exitCode !== 0) {
+      const out = `${await clone.stdout()}${await clone.stderr()}`.replaceAll(token, '***')
+      throw new Error(`Cloning ${site.githubRepo} failed (exit ${clone.exitCode}):\n${out.slice(-1500)}`)
+    }
     const previewUrl = sandbox.domain(PORT)
     session = await update(payload, session.id, {
       previewUrl,
@@ -164,7 +176,7 @@ export async function provisionSession(payload: Payload, sessionId: number): Pro
       if (name) env[name] = (value ?? '').replaceAll('{{previewUrl}}', previewUrl)
     }
     await sandbox.writeFiles([{ path: `${REPO_DIR}/.env.local`, content: Buffer.from(`${dotenv(env)}\n`) }])
-    await sh(sandbox, `git checkout -b ${gitBranchFor(session.id)}`, env)
+    await sh(sandbox, `git remote set-url origin https://github.com/${site.githubRepo}.git && git checkout -b ${gitBranchFor(session.id)}`, env)
 
     // 3. Dependencies.
     session = await setPhase(payload, session, 'installing')
