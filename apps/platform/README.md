@@ -126,6 +126,21 @@ Preview URLs are **public, unguessable links**, not signed in. Fine for now; rev
 
 First real run (2026-10-23, YIMBY on Payload 4 beta): ready in 49 s. Branch, Bun install of 1,257 packages in 3 s, one pending migration applied on the session's branch, homepage served from the sandbox. Stopping removed the VM and the branch.
 
+## Agent chat (M4)
+
+Each ready session runs **Claude Code** headless inside its sandbox (`src/lib/sessions/agent.ts`). Provisioning installs the CLI after the site's dependencies.
+
+- **Model:** `anthropic/claude-opus-5.5`, with `anthropic/claude-haiku-5.5` as the small model. Both go through Vercel AI Gateway's Claude Code endpoint and are billed to the Sitekick team.
+- **Credential brokering:** the model credential never enters the VM. The sandbox firewall injects `Authorization: Bearer <Vercel OIDC token>` on requests to `ai-gateway.vercel.sh`. The VM only sees a placeholder token. The policy is refreshed before every turn, since OIDC tokens expire.
+- `POST /api/v1/sessions/:id/messages` with `{ text }` (up to 8,000 characters) stores the user message, marks the agent `working`, and runs the turn after the response (202). It returns 409 if the session isn't ready or the agent is busy.
+- The turn streams Claude Code's JSON events into `messages`: assistant text, one short note per file edit or command, and notices.
+- **Checkpoints:** when the turn changed files, it commits them to the session branch as `sitekick: <prompt>`. `--resume` keeps the conversation across turns.
+- `GET /api/v1/sessions/:id/messages?after=<n>` returns `{ session, messages, nextAfter }`. Clients poll it while `session.agentStatus` is `working`.
+- `POST /api/v1/sessions/:id/undo` resets the branch to before the last `sitekick:` checkpoint. It returns 409 `nothing_to_undo` when the last commit isn't one.
+- **Read access:** messages are readable only by their session's user and by staff. Nobody writes them through Payload's REST.
+
+Untested in production so far: the first real turn (AI Gateway credits, the firewall policy alongside Neon and npm traffic).
+
 ## Not done yet
 
 - **GitHub connection** for Git deploys, with root directory `apps/platform`. Then the Neon integration can create a database branch per preview, and previews can migrate their own branch.

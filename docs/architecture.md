@@ -81,7 +81,7 @@ flowchart LR
   P --- J
   P -- create / stop / snapshot --> S
   D -- preview URL in WebView --> S
-  D -- agent event stream (SSE) --> P
+  D -- agent messages (polled) --> P
   S -- events --> P
   S -- clone / push branch --> GH
   S -- model calls --> AI
@@ -146,7 +146,7 @@ flowchart TD
 ## Editing session lifecycle
 
 1. **Start:** the user opens a site. The platform creates (or resumes) a session, and a Sandbox boots from a per-site **snapshot** with dependencies already installed. It checks out `sitekick/<session-id>` from the default branch, starts `next dev`, and returns the preview URL.
-2. **Edit:** the user chats. The platform forwards messages to the agent running in the sandbox (Claude Agent SDK through AI Gateway). The agent edits files, hot reload updates the preview, and events stream back to the client.
+2. **Edit:** the user chats. The platform runs Claude Code headless in the sandbox (through AI Gateway, with the credential injected by the sandbox firewall). The agent edits files and hot reload updates the preview. Its events are stored as messages, which the client polls. Each turn that changed files is committed as a checkpoint the user can undo.
 3. **Save:** the agent or user commits to the session branch and pushes through the GitHub App. A Vercel preview deployment is created for the branch.
 4. **Publish:** a PR opens. Depending on `publishPolicy`, it either merges directly or waits for staff approval. Merging deploys production.
 5. **Idle and end:** a Payload job stops idle sandboxes after N minutes. The branch keeps the work, so resuming means a fresh sandbox on the same branch.
@@ -171,7 +171,7 @@ The Native SDK core can't import npm packages. Shared API types are generated fr
 | M1 | Desktop sign-in + site picker | Sign in through `/api/v1/auth/*`, keychain session, `/api/v1/me/sites`, auto-open for one site, picker for several, switch site, sign out. **Status: done (2026-10-18).** Browser device sign-in instead of a password form, Keychain session with refresh-and-retry, picker or auto-open, last site remembered, sign-out with revocation. Tested headless (`dev-script.ndjson`) and in the real app against the local platform. |
 | M2 | Site connection | GitHub App installed and Vercel project linked. Staff register a site in the admin and the platform verifies access. **Status: done (2026-10-18).** GitHub App Sitekick Platform installed on sitekickcodes, Vercel token set, and YIMBY Action registered as the first real site with status Connected (app can push, Vercel project deploys the same repo). Client-owned Vercel teams are still to come. |
 | M3 | Editing session + preview | Opening a site boots a sandbox from a snapshot and shows the live preview in the WebView. Idle shutdown and resume work. **Status: done (2026-10-23).** Decided: a Neon branch per session copied from the site's parent branch (yimby: `staging`), and no Blob token in sandboxes. Verified end to end with YIMBY: ready in 49 s, preview in the desktop app, and stopping removes the VM and the branch. Preview URLs are public, unguessable links for now. |
-| M4 | Agent chat | Chat in the right panel drives an agent in the sandbox. Events stream, edits show in the preview, and changes can be undone. |
+| M4 | Agent chat | Chat in the right panel drives an agent in the sandbox. Events stream, edits show in the preview, and changes can be undone. **Status: built (2026-10-23), first real run pending.** Claude Code runs headless in the sandbox on Claude Opus 5.5 through AI Gateway. The firewall brokers the credential, so it never enters the VM. Each turn becomes a git checkpoint that can be undone. The desktop app polls messages while the agent works; SSE can come later. |
 | M5 | Publish | Commit to the session branch, PR, Vercel preview, optional staff approval, merge to production. |
 | M6 | Production readiness | Audit log, per-org usage limits, notifications, packaging, code signing and notarization, auto-update. |
 | Later | Mobile, CMS edits through the site's Payload MCP, click-to-select elements in the preview | |

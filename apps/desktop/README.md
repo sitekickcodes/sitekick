@@ -68,6 +68,10 @@ After sign-in the app loads `/api/v1/me/sites`. With exactly one site it opens s
 
 Opening a site starts (or resumes) your platform session for it (`POST /api/v1/sites/:id/sessions`) and shows its setup phases, polled every 2 seconds. Once it's ready, the manifest's `preview` WebView is pinned to the workspace's `preview-pane` panel by `webPanes()` in `core.ts` and shows the sandbox's dev server. A heartbeat every 5 minutes keeps the sandbox alive. Switching sites or signing out stops the session first.
 
+## Agent chat
+
+When the session is ready, a chat column sits beside the preview. **Send** (or Enter) posts the draft to `/api/v1/sessions/:id/messages`. The app then polls that endpoint every 1.5 s with `?after=` until the agent goes idle, appending assistant replies, short notes on edits and commands, and notices. The draft is locked while the agent works. **Undo** posts `/undo`, which reverts the agent's last checkpoint, and the preview reloads through the dev server's hot reload.
+
 The preview WebView allows every origin (`allowed_origins: ["*"]`): sandbox hosts are random `*.vercel.run` subdomains, and the SDK only matches exact origins or `*`. It has no bridge to native code.
 
 ## Layout
