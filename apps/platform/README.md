@@ -139,7 +139,7 @@ Each ready session runs **Claude Code** headless inside its sandbox (`src/lib/se
 - `POST /api/v1/sessions/:id/undo` resets the branch to before the last `sitekick:` checkpoint. It returns 409 `nothing_to_undo` when the last commit isn't one.
 - **Read access:** messages are readable only by their session's user and by staff. Nobody writes them through Payload's REST.
 
-Untested in production so far: the first real turn (AI Gateway credits, the firewall policy alongside Neon and npm traffic).
+First real turn (2026-10-26, YIMBY): asked for a banner on every page. The agent found the frontend layout, edited it, and replied in about 20 s. The preview served the banner, the checkpoint was committed, and Undo removed it. The brokered AI Gateway credential worked alongside the session's Neon and npm traffic.
 
 ## Not done yet
 
